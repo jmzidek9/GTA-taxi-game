@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crosstown</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: full-bleed 3D canvas with a translucent night-dispatch HUD layered on top; sheets slide over for menus. */
+:root {
+  color-scheme: dark;
+  --ink: #0b0f14;
+  --panel: rgba(11, 15, 20, 0.74);
+  --panel-solid: #10151c;
+  --line: rgba(238, 241, 244, 0.12);
+  --text: #eef1f4;
+  --muted: #98a4b0;
+  --amber: #ffc61a;
+  --cyan: #40e0ff;
+  --fare: #ffb321;
+  --good: #5ee08a;
+  --bad: #ff5a4a;
+  --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--ui); overflow: hidden; -webkit-user-select: none; user-select: none; touch-action: none; padding-left: 0; padding-right: 0; }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; filter: saturate(1.08) contrast(1.04); }
+.vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 55%, transparent 55%, rgba(0, 0, 0, 0.45) 100%); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; padding: calc(12px + var(--st)) max(16px, var(--sr)) calc(12px + var(--sb)) max(16px, var(--sl)); }
+body:not([data-mode="play"]) #hud, body:not([data-mode="play"]) #touch { display: none; }
+.glass { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+#wallet { position: absolute; left: max(16px, var(--sl)); top: calc(12px + var(--st)); padding: 8px 14px 10px; min-width: 150px; }
+#cash { font-family: var(--display); font-weight: 800; font-size: 34px; line-height: 1; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; color: var(--amber); }
+.wallet-sub { display: flex; gap: 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-top: 4px; }
+#streak { color: var(--good); }
+.xp { height: 3px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+#xpbar { height: 100%; width: 0; background: var(--cyan); }
+
+#mission { position: absolute; left: 50%; transform: translateX(-50%); top: calc(12px + var(--st)); width: min(460px, calc(100% - 380px)); padding: 10px 14px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; }
+#mission .chip { grid-column: 1; justify-self: start; }
+.chip { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; color: #10151c; background: var(--chip, var(--amber)); }
+#objTitle { grid-column: 1; font-weight: 700; font-size: 18px; line-height: 1.15; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#objSub { grid-column: 1; font-size: 13px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-right { grid-column: 2; grid-row: 1 / span 3; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+#objTimer { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: 0.95; font-variant-numeric: tabular-nums; }
+#objTimer.warn { color: var(--amber); animation: blink 0.8s steps(2) infinite; }
+#objTimer.over { color: var(--bad); }
+@keyframes blink { 50% { opacity: 0.55; } }
+#objDist { font-family: var(--mono); font-size: 13px; color: var(--cyan); }
+#objPay { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+#mood { grid-column: 1 / -1; height: 3px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+#moodBar { height: 100%; width: 100%; transition: width 0.3s, background 0.3s; }
+
+#topBtns { position: absolute; right: max(16px, var(--sr)); top: calc(12px + var(--st)); display: flex; gap: 8px; pointer-events: auto; }
+.hbtn { pointer-events: auto; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; height: 40px; min-width: 40px; padding: 0 12px; font-weight: 700; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); display: inline-flex; align-items: center; gap: 6px; }
+.hbtn:hover { border-color: rgba(255, 198, 26, 0.6); }
+.hbtn.primary { background: var(--amber); color: #10151c; border-color: var(--amber); }
+.kbd { font-family: var(--mono); font-size: 10px; opacity: 0.6; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+body.touch .kbd { display: none; }
+
+#mapWrap { position: absolute; left: max(16px, var(--sl)); bottom: calc(14px + var(--sb)); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+#minimap { width: 190px; height: 190px; border-radius: 50%; border: 2px solid rgba(238, 241, 244, 0.25); box-shadow: 0 6px 30px rgba(0, 0, 0, 0.5); background: #0d1218; }
+.map-meta { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); display: flex; flex-direction: column; gap: 1px; }
+#district { color: var(--amber); font-weight: 700; }
+#speedo { position: absolute; right: max(10px, var(--sr)); bottom: calc(6px + var(--sb)); width: 200px; height: 200px; filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.6)); }
+
+#hudPrompt { position: absolute; left: 50%; bottom: calc(150px + var(--sb)); transform: translateX(-50%); padding: 10px 18px; font-weight: 700; font-size: 16px; letter-spacing: 0.03em; white-space: nowrap; pointer-events: auto; cursor: pointer; }
+#hudPrompt.act { background: var(--amber); color: #10151c; border-color: var(--amber); animation: nudge 1.2s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: translateX(-50%) translateY(-3px); } }
+#say { position: absolute; left: max(16px, var(--sl)); top: calc(110px + var(--st)); max-width: 300px; padding: 10px 14px; }
+#say.pop { animation: pop 0.35s ease-out; }
+@keyframes pop { from { transform: translateY(6px); opacity: 0; } }
+#sayName { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--cyan); font-weight: 700; }
+#sayLine { font-size: 15px; margin-top: 2px; }
+#toasts { position: absolute; left: 50%; top: calc(110px + var(--st)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.toast { background: var(--panel-solid); border: 1px solid var(--line); border-radius: 6px; padding: 7px 14px; font-size: 14px; font-weight: 600; transition: opacity 0.5s, transform 0.5s; white-space: nowrap; }
+.toast.out { opacity: 0; transform: translateY(-8px); }
+#offArrow { position: fixed; left: 0; top: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; margin: -24px 0 0 -30px; width: 60px; }
+#offPoint { width: 0; height: 0; border-top: 11px solid transparent; border-bottom: 11px solid transparent; border-left: 20px solid var(--fare); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7)); }
+#offArrow.pickup #offPoint { border-left-color: var(--cyan); }
+#offArrow.on #offPoint { border: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--fare); transform: none !important; }
+#offArrow.on.pickup #offPoint { background: var(--cyan); }
+#offDist { font-family: var(--mono); font-size: 12px; color: #fff; text-shadow: 0 1px 3px #000; margin-top: 3px; }
+#fps { position: absolute; right: max(16px, var(--sr)); top: calc(60px + var(--st)); font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* ---------- Touch controls ---------- */
+#touch { display: none; }
+body.touch[data-mode="play"] #touch { display: block; }
+body.touch #speedo { width: 132px; height: 132px; right: 50%; transform: translateX(50%); bottom: calc(4px + var(--sb)); }
+body.touch #minimap { width: 118px; height: 118px; }
+body.touch #mapWrap { left: auto; right: max(16px, var(--sr)); bottom: auto; top: calc(62px + var(--st)); align-items: flex-end; }
+body.touch #mission { width: auto; left: calc(max(16px, var(--sl)) + 128px); right: calc(max(16px, var(--sr)) + 128px); transform: none; }
+body.touch #hudPrompt { bottom: calc(150px + var(--sb)); }
+.tpad { position: fixed; bottom: calc(14px + var(--sb)); pointer-events: auto; touch-action: none; }
+#steerPad { left: max(14px, var(--sl)); width: min(38vw, 260px); height: 92px; border-radius: 46px; display: flex; align-items: center; justify-content: center; }
+#steerPad::before { content: "◀ STEER ▶"; position: absolute; font-size: 11px; letter-spacing: 0.2em; color: var(--muted); top: -18px; }
+#steerKnob { width: 66px; height: 66px; border-radius: 50%; background: rgba(238, 241, 244, 0.18); border: 2px solid rgba(238, 241, 244, 0.5); transition: transform 0.08s; }
+.pedals { right: max(14px, var(--sr)); display: flex; gap: 10px; align-items: flex-end; }
+.tbtn { border: 1px solid var(--line); background: var(--panel); border-radius: 14px; font-weight: 800; letter-spacing: 0.08em; font-size: 13px; text-transform: uppercase; touch-action: none; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.tbtn.on { background: var(--amber); color: #10151c; }
+#tGas { width: 82px; height: 118px; }
+#tBrake { width: 74px; height: 88px; }
+#tHb { width: 60px; height: 52px; font-size: 11px; }
+.tcol { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+
+/* ---------- Sheets / menus ---------- */
+.sheet { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: flex-start; padding: calc(16px + var(--st)) max(16px, var(--sr)) calc(16px + var(--sb)) max(16px, var(--sl)); background: rgba(5, 8, 12, 0.55); overflow-y: auto; }
+.sheet > * { margin: auto; flex-shrink: 0; }
+.sheet { touch-action: pan-y; }
+.card { background: var(--panel-solid); border: 1px solid var(--line); border-radius: 14px; padding: 22px; width: min(520px, 100%); max-height: 100%; overflow-y: auto; box-shadow: 0 20px 80px rgba(0, 0, 0, 0.6); }
+.card h2 { font-family: var(--display); font-weight: 800; font-size: 34px; letter-spacing: 0.02em; text-transform: uppercase; margin: 0 0 4px; line-height: 1; text-wrap: balance; }
+.card .lede { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 12px 16px; font-weight: 700; font-size: 15px; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.btn:hover:not(:disabled) { border-color: rgba(255, 198, 26, 0.7); background: rgba(255, 198, 26, 0.08); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn.primary { background: var(--amber); color: #10151c; border-color: var(--amber); }
+.btn.primary:hover:not(:disabled) { background: #ffd34d; }
+.btn.danger { color: var(--bad); }
+.btn.small { padding: 8px 12px; font-size: 13px; }
+
+/* main menu: left-aligned title over the live city */
+#mainMenu { background: linear-gradient(90deg, rgba(5, 8, 12, 0.88) 0%, rgba(5, 8, 12, 0.55) 45%, rgba(5, 8, 12, 0) 75%); }
+#mainMenu > .title-block { margin: auto auto auto 0; }
+.title-block { width: min(440px, 100%); display: flex; flex-direction: column; gap: 22px; padding-left: clamp(0px, 5vw, 60px); }
+.logo { font-family: var(--display); font-weight: 900; font-size: clamp(54px, min(13vw, 17vh), 120px); line-height: 0.82; letter-spacing: -0.01em; margin: 0; color: var(--amber); text-transform: uppercase; }
+.logo span { display: block; color: var(--text); font-size: 0.3em; letter-spacing: 0.24em; font-weight: 700; margin-top: 10px; }
+.tag { font-size: 17px; color: var(--text); max-width: 34ch; margin: 0; }
+.medallion { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; border-top: 1px solid var(--line); padding-top: 10px; }
+.checker { height: 10px; width: 160px; background: repeating-conic-gradient(#10151c 0 25%, var(--amber) 0 50%) 0 0 / 10px 10px; border-radius: 2px; }
+
+/* dispatch */
+#offers { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.offer { text-align: left; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; border-left: 4px solid var(--chip); }
+.offer:hover { background: rgba(255, 255, 255, 0.07); }
+.offer-top { display: flex; justify-content: space-between; align-items: center; }
+.offer-key { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; }
+body.touch .offer-key { display: none; }
+.offer-route { display: grid; grid-template-columns: 14px 1fr; column-gap: 8px; align-items: center; }
+.offer-route b { font-size: 16px; min-width: 0; }
+.offer-route small { grid-column: 2; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot.pu { background: var(--cyan); } .dot.de { background: var(--fare); }
+.offer-meta { display: flex; gap: 14px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+.offer-meta em { font-style: normal; color: var(--text); font-weight: 700; font-family: var(--mono); }
+.offer-meta .pay { margin-left: auto; }
+.offer-meta .pay em { color: var(--amber); font-size: 16px; }
+.offer-warn { font-size: 12px; color: var(--bad); }
+
+/* receipt */
+.receipt { background: #f4efe2; color: #1c1a16; border-radius: 4px; padding: 20px 20px 16px; font-family: var(--mono); width: min(400px, 100%); box-shadow: 0 20px 80px rgba(0, 0, 0, 0.6); position: relative; }
+.receipt::after { content: ""; position: absolute; left: 0; right: 0; bottom: -8px; height: 8px; background: linear-gradient(-45deg, transparent 6px, #f4efe2 0) 0 0 / 12px 8px, linear-gradient(45deg, transparent 6px, #f4efe2 0) 0 0 / 12px 8px; }
+.rc-head { text-align: center; border-bottom: 1px dashed #8b8474; padding-bottom: 10px; margin-bottom: 10px; }
+.rc-head h3 { font-family: var(--display); font-size: 30px; margin: 0; letter-spacing: 0.08em; font-weight: 900; }
+.rc-head p { margin: 2px 0 0; font-size: 12px; color: #5a5446; }
+.rc-row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 14px; align-items: baseline; }
+.rc-row b { font-weight: 500; display: block; }
+.rc-row small { display: block; font-size: 11px; color: #6c6555; }
+.rc-row span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rc-row .neg { color: #b4321f; }
+.rc-total { display: flex; justify-content: space-between; border-top: 1px dashed #8b8474; margin-top: 8px; padding-top: 10px; font-size: 15px; align-items: baseline; }
+.rc-total strong { font-family: var(--display); font-weight: 900; font-size: 40px; line-height: 1; }
+#rcBal { font-size: 12px; color: #5a5446; margin: 6px 0 14px; text-align: right; }
+.receipt .btn { color: #1c1a16; border-color: #b9b19e; font-family: var(--ui); }
+.receipt .btn.primary { background: #1c1a16; color: #f4efe2; border-color: #1c1a16; }
+
+/* settings */
+.field { display: grid; grid-template-columns: 1fr minmax(0, 190px); gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+.field select, .field input[type=range] { width: 100%; }
+select { background: #1a212a; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px; font: inherit; }
+input[type=range] { accent-color: var(--amber); }
+input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; justify-self: end; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 15px; margin-bottom: 14px; }
+.keys kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; background: rgba(255, 255, 255, 0.05); justify-self: start; white-space: nowrap; }
+
+/* garage: bottom sheet so the car stays visible */
+#garage > .garage-card { margin: auto auto 0; }
+#garage { background: linear-gradient(0deg, rgba(5, 8, 12, 0.9) 0%, rgba(5, 8, 12, 0.3) 55%, rgba(5, 8, 12, 0) 70%); }
+.garage-card { width: min(980px, 100%); display: grid; grid-template-columns: 220px 1fr; gap: 18px; background: rgba(16, 21, 28, 0.92); border: 1px solid var(--line); border-radius: 14px; padding: 18px; max-height: 64vh; overflow-y: auto; }
+.ghead { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.ghead h2 { font-family: var(--display); font-weight: 800; font-size: 30px; margin: 0; text-transform: uppercase; }
+#gCash { font-family: var(--display); font-weight: 800; font-size: 26px; color: var(--amber); }
+#gList { display: flex; flex-direction: column; gap: 6px; }
+.gcar { text-align: left; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); border-radius: 8px; padding: 8px 10px; cursor: pointer; display: grid; grid-template-columns: 1fr auto; }
+.gcar.sel { border-color: var(--amber); background: rgba(255, 198, 26, 0.08); }
+.gcls { grid-column: 1 / -1; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.gprice { font-family: var(--mono); font-size: 12px; color: var(--amber); align-self: center; }
+.gcar.cur .gprice { color: var(--good); }
+.gdetail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#gName { font-family: var(--display); font-size: 32px; font-weight: 800; line-height: 1; }
+#gDesc { color: var(--muted); margin: 0; font-size: 14px; }
+#gStats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
+.gstat { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.gstat i { height: 6px; background: rgba(255, 255, 255, 0.08); border-radius: 3px; overflow: hidden; }
+.gstat b { display: block; height: 100%; background: linear-gradient(90deg, var(--amber), #ff7a3c); }
+.gtop { grid-column: 1 / -1; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.glabel { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+#gUp { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.gup { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); border-radius: 8px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; }
+.gup:disabled { opacity: 0.5; cursor: default; }
+.gup small { font-family: var(--mono); font-size: 11px; color: var(--amber); }
+.pips { display: flex; gap: 3px; } .pips i { width: 14px; height: 4px; background: rgba(255, 255, 255, 0.15); border-radius: 2px; } .pips i.on { background: var(--cyan); }
+#gPaint { display: flex; gap: 6px; flex-wrap: wrap; }
+.swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); cursor: pointer; }
+.swatch.on { border-color: var(--amber); box-shadow: 0 0 0 2px var(--panel-solid), 0 0 0 4px var(--amber); }
+.swatch:disabled { opacity: 0.35; cursor: default; }
+
+#loading, #bootError { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--ink); z-index: 10; text-align: center; padding: 0 max(16px, var(--sr)) 0 max(16px, var(--sl)); }
+#loading .logo { font-size: 72px; }
+.loadbar { width: 160px; height: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; border-radius: 2px; }
+.loadbar i { display: block; height: 100%; width: 40%; background: var(--amber); animation: load 1.1s ease-in-out infinite; }
+@keyframes load { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+@media (max-width: 760px) {
+  #minimap { width: 140px; height: 140px; }
+  #mission { width: auto; left: calc(max(16px, var(--sl)) + 130px); right: max(16px, var(--sr)); transform: none; top: calc(62px + var(--st)); }
+  body.touch #mission { left: max(16px, var(--sl)); right: calc(max(16px, var(--sr)) + 128px); top: calc(80px + var(--st)); }
+  #wallet { min-width: 0; padding: 6px 10px 8px; }
+  #cash { font-size: 26px; }
+  #objTitle { font-size: 15px; } #objTimer { font-size: 30px; }
+  #say { top: calc(170px + var(--st)); max-width: 62vw; }
+  #toasts { top: calc(170px + var(--st)); }
+  .garage-card { grid-template-columns: 1fr; max-height: 70vh; }
+  #gList { flex-direction: row; overflow-x: auto; }
+  .gcar { min-width: 130px; }
+  #gUp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #gStats { grid-template-columns: 1fr; }
+  .hbtn .lbl { display: none; }
+}
+@media (max-height: 460px) {
+  body.touch #mission { top: calc(12px + var(--st)); left: calc(max(16px, var(--sl)) + 170px); right: calc(max(16px, var(--sr)) + 200px); }
+  body.touch #mapWrap { top: calc(60px + var(--st)); }
+  body.touch #minimap { width: 100px; height: 100px; }
+  #say, #toasts { top: calc(104px + var(--st)); }
+  .title-block { gap: 14px; }
+  .garage-card { max-height: 80vh; }
+  body.touch #hudPrompt { bottom: calc(118px + var(--sb)); }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+
+<div id="stage"></div>
+<div class="vignette"></div>
+
+<div id="hud">
+  <div id="wallet" class="glass">
+    <div id="cash">$0</div>
+    <div class="wallet-sub"><span id="lvl">Level 1</span><span id="streak"></span></div>
+    <div class="xp"><div id="xpbar"></div></div>
+  </div>
+  <div id="mission" class="glass">
+    <span class="chip" id="objChip">Off duty</span>
+    <div id="objTitle">Press F for a fare</div>
+    <div id="objSub"></div>
+    <div class="obj-right"><div id="objTimer" hidden>0:00</div><div id="objDist"></div><div id="objPay"></div></div>
+    <div id="mood" hidden><div id="moodBar"></div></div>
+  </div>
+  <div id="topBtns">
+    <button class="hbtn primary" data-act="fares" aria-label="Fares"><span class="lbl">Fares</span><span class="kbd">F</span><span class="tlbl" aria-hidden="true"></span></button>
+    <button class="hbtn" data-act="camera" aria-label="Switch camera"><span class="lbl">Cam</span><span class="kbd">C</span><svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><rect x="1" y="3" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13 7l4-3v8l-4-3z" fill="currentColor"/></svg></button>
+    <button class="hbtn" data-act="pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="1" width="3.5" height="12" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" fill="currentColor"/></svg></button>
+  </div>
+  <div id="fps" hidden></div>
+  <div id="mapWrap"><canvas id="minimap" width="240" height="240"></canvas><div class="map-meta"><span id="district"></span><span id="clock"></span></div></div>
+  <canvas id="speedo" width="260" height="260"></canvas>
+  <button id="hudPrompt" class="glass" hidden></button>
+  <div id="say" class="glass" hidden><div id="sayName"></div><div id="sayLine"></div></div>
+  <div id="toasts"></div>
+  <div id="offArrow" hidden><div id="offPoint"></div><div id="offDist"></div></div>
+</div>
+
+<div id="touch">
+  <div id="steerPad" class="tpad glass"><div id="steerKnob"></div></div>
+  <div class="tpad pedals">
+    <div class="tcol"><button class="tbtn" id="tHb">Drift</button><button class="tbtn" id="tBrake">Brake</button></div>
+    <button class="tbtn" id="tGas">Gas</button>
+  </div>
+</div>
+
+<!-- Main menu -->
+<section class="sheet" id="mainMenu" hidden>
+  <div class="title-block">
+    <div class="checker"></div>
+    <h1 class="logo">Crosstown<span>Vale Harbor Fares</span></h1>
+    <p class="tag">Pick them up. Get them there. Get paid. Every minute on the meter counts.</p>
+    <div class="stack">
+      <button class="btn primary" id="menuContinue" data-act="continue" hidden>Continue shift <span>→</span></button>
+      <button class="btn" id="menuStart" data-act="newCareer">Start driving</button>
+      <button class="btn" data-act="garageMenu">Garage <span class="kbd">5 cars</span></button>
+      <button class="btn" data-act="settingsMenu">Settings</button>
+      <button class="btn" data-act="controlsMenu">Controls</button>
+    </div>
+    <div class="medallion" id="menuStats">Medallion 4C17 · Vale Harbor Taxi Commission</div>
+  </div>
+</section>
+
+<section class="sheet" id="confirmNew" hidden>
+  <div class="card"><h2>Start a new career?</h2><p class="lede">This clears your cash, cars and upgrades. Settings are kept.</p>
+    <div class="row"><button class="btn danger" data-act="confirmNew">Start over</button><button class="btn" data-act="cancelConfirmNew">Keep my career</button></div></div>
+</section>
+<section class="sheet" id="confirmReset" hidden>
+  <div class="card"><h2>Reset all progress?</h2><p class="lede">Cash, cars, upgrades and stats go back to day one. This can't be undone.</p>
+    <div class="row"><button class="btn danger" data-act="confirmReset">Reset progress</button><button class="btn" data-act="cancelConfirm">Cancel</button></div></div>
+</section>
+
+<!-- Pause -->
+<section class="sheet" id="pause" hidden>
+  <div class="card">
+    <h2>Paused</h2><p class="lede">The meter is stopped.</p>
+    <div class="stack">
+      <button class="btn primary" data-act="resume">Resume <span class="kbd">Esc</span></button>
+      <button class="btn" id="pauseRestart" data-act="restart">Restart fare</button>
+      <button class="btn" id="pauseAbandon" data-act="abandon">Abandon fare</button>
+      <button class="btn" data-act="recover">Reset car to road <span class="kbd">R</span></button>
+      <button class="btn" data-act="garagePause">Garage</button>
+      <button class="btn" data-act="settingsMenu">Settings</button>
+      <button class="btn" data-act="controlsMenu">Controls</button>
+      <button class="btn" data-act="menu">Main menu</button>
+    </div>
+  </div>
+</section>
+
+<!-- Dispatch -->
+<section class="sheet" id="dispatch" hidden>
+  <div class="card">
+    <h2>Dispatch</h2><p class="lede">Pick a fare. The meter starts once your passenger is seated.</p>
+    <div id="offers"></div>
+    <div class="row"><button class="btn small" data-act="refreshOffers">New offers</button><button class="btn small" data-act="roam">Free roam</button></div>
+  </div>
+</section>
+
+<!-- Fare complete receipt -->
+<section class="sheet" id="complete" hidden>
+  <div class="receipt">
+    <div class="rc-head"><h3>CROSSTOWN</h3><p id="rcTrip">Trip 0001</p><p id="rcRoute"></p></div>
+    <div id="rcRows"></div>
+    <div class="rc-total"><span>TOTAL PAID</span><strong id="rcTotal">$0</strong></div>
+    <div id="rcBal"></div>
+    <div class="row"><button class="btn primary" data-act="nextFare">Next fare <span class="kbd">Enter</span></button><button class="btn" data-act="roam">Free roam</button></div>
+  </div>
+</section>
+
+<!-- Fare failed -->
+<section class="sheet" id="fail" hidden>
+  <div class="card">
+    <h2>Fare lost</h2><p class="lede" id="failReason"></p><p class="lede" id="failRoute" style="font-family: var(--mono); font-size: 13px;"></p>
+    <div class="row"><button class="btn primary" data-act="retry">Retry fare</button><button class="btn" data-act="nextFare">New fares</button><button class="btn" data-act="roam">Free roam</button></div>
+  </div>
+</section>
+
+<!-- Settings -->
+<section class="sheet" id="settings" hidden>
+  <div class="card">
+    <h2>Settings</h2>
+    <div class="field"><label for="sQuality">Graphics quality</label><select id="sQuality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+    <div class="field"><label for="sVolume">Volume</label><input id="sVolume" type="range" min="0" max="1" step="0.05"></div>
+    <div class="field"><label for="sSens">Camera drag sensitivity</label><input id="sSens" type="range" min="0.3" max="2.5" step="0.1"></div>
+    <div class="field"><label for="sFov">Field of view</label><input id="sFov" type="range" min="55" max="85" step="1"></div>
+    <div class="field"><label for="sUnits">Speed units</label><select id="sUnits"><option value="mph">mph</option><option value="kmh">km/h</option></select></div>
+    <div class="field"><label for="sTime">Time of day</label><select id="sTime"><option value="cycle">Live cycle</option><option value="morning">Morning</option><option value="noon">Noon</option><option value="sunset">Sunset</option><option value="night">Night</option></select></div>
+    <div class="field"><label for="sWeather">Weather</label><select id="sWeather"><option value="auto">Changing</option><option value="clear">Clear</option><option value="cloudy">Overcast</option><option value="rain">Rain</option><option value="fog">Fog</option></select></div>
+    <div class="field"><label for="sShake">Camera shake</label><input id="sShake" type="checkbox"></div>
+    <div class="field"><label for="sFps">Show frame rate</label><input id="sFps" type="checkbox"></div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" data-act="settingsBack">Done</button><button class="btn danger small" data-act="resetProgress">Reset progress</button></div>
+  </div>
+</section>
+
+<!-- Controls -->
+<section class="sheet" id="controls" hidden>
+  <div class="card">
+    <h2>Controls</h2>
+    <div class="keys">
+      <kbd>W / ↑</kbd><span>Accelerate</span>
+      <kbd>S / ↓</kbd><span>Brake, then reverse</span>
+      <kbd>A D / ← →</kbd><span>Steer</span>
+      <kbd>Space</kbd><span>Handbrake (drift)</span>
+      <kbd>E</kbd><span>Let passenger in or out</span>
+      <kbd>F</kbd><span>Open dispatch (fares)</span>
+      <kbd>1 2 3</kbd><span>Accept a fare in dispatch</span>
+      <kbd>C</kbd><span>Chase / cockpit camera</span>
+      <kbd>Mouse drag</kbd><span>Look around</span>
+      <kbd>R</kbd><span>Reset car onto the road</span>
+      <kbd>H</kbd><span>Horn</span> <kbd>M</kbd><span>Mute</span>
+      <kbd>Esc / P</kbd><span>Pause</span>
+      <kbd>Gamepad</kbd><span>Stick steers, RT gas, LT brake, B drift, A interact, Y camera, X fares</span>
+      <kbd>Touch</kbd><span>Drag the steering pad, hold Gas / Brake, tap the yellow prompt to board</span>
+    </div>
+    <p class="lede">Stop inside the glowing ring next to your passenger. They walk to the rear door and climb in, then the meter starts.</p>
+    <button class="btn primary" data-act="controlsBack">Back</button>
+  </div>
+</section>
+
+<!-- Garage -->
+<section class="sheet" id="garage" hidden>
+  <div class="garage-card">
+    <div class="ghead"><h2>Garage</h2><div class="row" style="align-items:center"><span id="gCash">$0</span><button class="btn small" data-act="garageBack">Done</button></div></div>
+    <div id="gList"></div>
+    <div class="gdetail">
+      <div><div id="gName"></div><p id="gDesc"></p></div>
+      <div id="gStats"></div>
+      <button class="btn primary" id="gAction" data-act="garageAction">Buy</button>
+      <div><div class="glabel">Upgrades</div><div id="gUp"></div></div>
+      <div><div class="glabel">Paint</div><div id="gPaint"></div></div>
+    </div>
+  </div>
+</section>
+
+<div id="loading"><div class="logo">Crosstown</div><div class="loadbar"><i></i></div><div style="color:var(--muted);font-size:13px">Building Vale Harbor…</div></div>
+<div id="bootError" hidden><h2 style="font-family:var(--display);font-size:34px;margin:0">Couldn't start the game</h2><p style="color:var(--muted);max-width:40ch"></p></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/world.js"></script>
+<script src="js/people.js"></script>
+<script src="js/vehicle.js"></script>
+<script src="js/traffic.js"></script>
+<script src="js/mission.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
