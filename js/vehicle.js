@@ -19,6 +19,7 @@ G.UPGRADES = {
   suspension: { name: 'Suspension', costs: [200, 500, 1000], desc: 'Smoother ride: less passenger discomfort from bumps' },
 };
 G.PAINTS = ['#f2b705', '#e8e8ea', '#1b1d22', '#c0392b', '#2d3e50', '#1f7a5c', '#3b5bdb', '#8e44ad', '#d35400', '#7f8c8d'];
+G.repairCost = (type, dmg) => Math.round(dmg * (2 + G.VEHICLES[type].price / 2000));
 G.specFor = (type, up) => {
   const b = G.VEHICLES[type]; up = up || {};
   const e = up.engine || 0, br = up.brakes || 0, h = up.handling || 0, s = up.suspension || 0;
@@ -201,7 +202,24 @@ G.buildCar = (type, color, opts) => {
   // seats: rear-right passenger, front-left driver (left is +x)
   const seat = { x: -0.4, y: d.c + 0.32, z: d.cabR + 0.62 };
   const doorOut = { x: -d.W / 2 - 0.85, z: -0.27 - doorLen * 0.55 };
-  return { root, body, wheels, dims: d, paintMat, headMat, tailMat, revMat, doorPivot, steering, needlePivot, interior, spot, seat, doorOut, taxiSign };
+  // soft volumetric headlight beams + contact shadow
+  const beams = new THREE.Mesh(G.FX.beamGeometry(d, 18), G.FX.beamMaterial()); beams.visible = false; body.add(beams);
+  root.add(G.FX.blob(d.W + 1, d.L + 1.2));
+  return { root, body, wheels, dims: d, paintMat, headMat, tailMat, revMat, doorPivot, steering, needlePivot, interior, spot, seat, doorOut, taxiSign, shell, beams };
+};
+
+/* Push shell vertices inward around a local contact point (x, y, z) */
+G.dentShell = (model, lx, ly, lz, nx, nz, depth) => {
+  const g = model.shell.geometry, pos = g.attributes.position, R = 0.75;
+  // the shell geometry is rotated -90° about Y at build time: local car (x, z) maps to geometry (x, z) directly after that bake
+  for (let k = 0; k < pos.count; k++) {
+    const x = pos.getX(k), y = pos.getY(k), z = pos.getZ(k);
+    const dd = Math.hypot(x - lx, (y - ly) * 1.4, z - lz);
+    if (dd > R) continue;
+    const f = Math.pow(1 - dd / R, 2) * depth;
+    pos.setXYZ(k, x - nx * f, y - f * 0.25, z - nz * f);
+  }
+  pos.needsUpdate = true;
 };
 
 /* ---------- Skid marks ring buffer ---------- */
@@ -243,7 +261,7 @@ class Car {
     this.x = 0; this.z = 0; this.heading = 0; this.vx = 0; this.vz = 0; this.yawRate = 0; this.steer = 0;
     this.vF = 0; this.vR = 0; this.aLong = 0; this.aLat = 0; this.pitch = 0; this.roll = 0; this.pitchV = 0; this.rollV = 0;
     this.rpm = 800; this.gear = 1; this.throttle = 0; this.braking = 0; this.hb = false; this.locked = false;
-    this.stuckT = 0; this.impact = 0;
+    this.stuckT = 0; this.impact = 0; this.damage = 0; this.lastHit = null;
     this.setType(type, color, upgrades);
   }
   setType(type, color, upgrades) {
@@ -253,10 +271,27 @@ class Car {
     this.model = G.buildCar(type, color, { taxi: true, lights: true });
     this.dims = this.model.dims;
     this.scene.add(this.model.root);
+    this.damage = (G.Save.data && G.Save.data.damage && G.Save.data.damage[type]) || 0;
+    // re-create some dents for a car that was already damaged
+    for (let k = 0; k < Math.floor(this.damage / 18); k++) { const a = Math.random() * Math.PI * 2, nx = Math.sin(a), nz = Math.cos(a); G.dentShell(this.model, -nx * this.dims.W / 2, 0.6, -nz * this.dims.L / 2, -nx, -nz, 0.08); }
+    this.applyWear();
     if (this.driver) this.model.body.add(this.driver.root);
     this.sync(0);
   }
   setColor(c) { this.color = c; this.model.paintMat.color.set(c); }
+  applyWear() {
+    const k = this.damage / 100, m = this.model.paintMat;
+    m.clearcoat = 1 - k * 0.75; m.roughness = 0.3 + k * 0.4; m.metalness = 0.6 - k * 0.25;
+  }
+  // amount in damage points (0..100); hit = {lx, lz, nx, nz} in car-local space
+  addDamage(amount, hit) {
+    if (amount <= 0) return;
+    this.damage = Math.min(100, this.damage + amount);
+    if (hit) G.dentShell(this.model, hit.lx, 0.55, hit.lz, hit.nx, hit.nz, Math.min(0.16, amount * 0.012));
+    this.applyWear();
+    const S = G.Save.data; S.damage[this.type] = Math.round(this.damage * 10) / 10;
+  }
+  repair() { this.damage = 0; G.Save.data.damage[this.type] = 0; this.setType(this.type, this.color, G.Save.data.upgrades[this.type]); this.placeDriver(); }
   addDriver(h) {
     this.driver = h; this.model.body.add(h.root);
     G.People.pose(h, 'sit', 0);
@@ -273,7 +308,8 @@ class Car {
     return [[this.x + fx * o, this.z + fz * o, r, o], [this.x, this.z, r, 0], [this.x - fx * o, this.z - fz * o, r, -o]];
   }
   update(dt, inp, env) {
-    const h = dt, sp = this.spec, d = this.dims;
+    const h = dt, d = this.dims, wear = this.damage / 100;
+    const sp = wear > 0 ? Object.assign({}, this.spec, { accel: this.spec.accel * (1 - wear * 0.32), top: this.spec.top * (wear >= 1 ? 0.22 : 1 - wear * 0.18) }) : this.spec;
     const fx = Math.sin(this.heading), fz = Math.cos(this.heading), rx = -fz, rz = fx;
     let vF = this.vx * fx + this.vz * fz, vR = this.vx * rx + this.vz * rz;
     let gas = inp.gas, brake = inp.brake, steerIn = inp.steer, hb = inp.hb;
@@ -287,7 +323,7 @@ class Car {
     this.reverse = reversing && brake > 0;
     if (gas > 0) {
       if (vF < -0.5) aF += sp.brake * gas;
-      else { const g = GEARS[Math.min(this.gear - 1, 5)]; const torque = 1.15 - 0.3 * (this.rpm / 7000); aF += sp.accel * gas * Math.max(0, 1 - Math.pow(Math.max(vF, 0) / sp.top, 2)) * torque * (1.05 - g * 0.12); }
+      else { const g = GEARS[M.clamp(this.gear - 1, 0, 5)]; const torque = 1.15 - 0.3 * (this.rpm / 7000); aF += sp.accel * gas * Math.max(0, 1 - Math.pow(Math.max(vF, 0) / sp.top, 2)) * torque * (1.05 - g * 0.12); } // gear can still be -1 right after bouncing backwards
     }
     let braking = 0;
     if (brake > 0) {
@@ -328,6 +364,7 @@ class Car {
       if (vn < 0) {
         this.vx -= 1.25 * vn * hit.nx; this.vz -= 1.25 * vn * hit.nz;
         this.vx *= 0.92; this.vz *= 0.92;
+        if (-vn > this.impact) this.lastHit = this.localHit(hit.nx, hit.nz, c, -vn);
         this.impact = Math.max(this.impact, -vn);
         // torque from off-center hit
         const cross = (Math.sin(this.heading) * hit.nz - Math.cos(this.heading) * hit.nx) * c[3];
@@ -348,17 +385,24 @@ class Car {
     // stuck detection
     if ((gas > 0.5 || brake > 0.5) && av < 0.8) this.stuckT += h; else this.stuckT = Math.max(0, this.stuckT - h * 2);
   }
+  // contact point + inward normal in car-local space, plus world position for sparks
+  localHit(nx, nz, c, v) {
+    const cs = Math.cos(this.heading), sn = Math.sin(this.heading);
+    const lnx = nx * cs - nz * sn, lnz = nx * sn + nz * cs; // world normal (obstacle -> car) in local frame
+    const lx = -lnx * c[2], lz = c[3] - lnz * c[2];
+    return { lx, lz, nx: -lnx, nz: -lnz, wx: c[0] - nx * c[2], wz: c[1] - nz * c[2], wnx: nx, wnz: nz, v };
+  }
   // push out of dynamic circles (traffic); returns impact speed
   collideWith(others) {
     let imp = 0;
     for (const o of others) {
       for (const c of this.circles()) {
         const dx = c[0] - o[0], dz = c[1] - o[1], dd = Math.hypot(dx, dz), rr = c[2] + o[2];
-        if (dd >= rr || dd === 0) continue;
+        if (!(dd < rr) || dd === 0) continue; // also skips NaN
         const nx = dx / dd, nz = dz / dd, depth = rr - dd;
         this.x += nx * depth; this.z += nz * depth;
         const vn = (this.vx - (o[3] || 0)) * nx + (this.vz - (o[4] || 0)) * nz;
-        if (vn < 0) { this.vx -= 1.3 * vn * nx; this.vz -= 1.3 * vn * nz; this.vx *= 0.9; this.vz *= 0.9; imp = Math.max(imp, -vn); if (o[5]) o[5](-vn); }
+        if (vn < 0) { this.vx -= 1.3 * vn * nx; this.vz -= 1.3 * vn * nz; this.vx *= 0.9; this.vz *= 0.9; if (-vn > imp) this.lastHit = this.localHit(nx, nz, c, -vn); imp = Math.max(imp, -vn); if (o[5]) o[5](-vn); }
       }
     }
     if (imp > this.impact) this.impact = imp;
@@ -383,7 +427,8 @@ class Car {
     m.headMat.emissiveIntensity = 0.3 + n * 3.2;
     m.tailMat.emissiveIntensity = this.braking > 0 ? 3.2 : 0.4 + n * 0.9;
     m.revMat.emissiveIntensity = this.gear === -1 ? 2 : 0;
-    if (m.spot) m.spot.intensity = n * 2.4;
+    if (m.spot) m.spot.intensity = n * 2.4 * (this.damage > 85 ? 0.5 : 1);
+    if (m.beams) m.beams.visible = n > 0.15;
     if (m.taxiSign) m.taxiSign.userData.mat.emissiveIntensity = this.passengerAboard ? 0.08 : 0.4 + n * 1.2;
   }
 }

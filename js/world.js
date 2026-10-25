@@ -179,6 +179,7 @@ function makeMaterials() {
   const std = (o) => new THREE.MeshStandardMaterial(o);
   const asphaltTex = T.asphalt(); asphaltTex.repeat.set(C.SIZE / 10, C.SIZE / 10);
   mats.asphalt = std({ map: asphaltTex, roughness: 0.92, metalness: 0.0, color: 0xffffff });
+  W.puddleTex = T.puddles();
   mats.sidewalk = std({ map: T.concrete(), roughness: 0.9, vertexColors: true });
   mats.grass = std({ map: T.grass(), roughness: 1, color: 0xffffff });
   mats.roof = std({ map: T.roof(), roughness: 0.95, vertexColors: true });
@@ -291,6 +292,23 @@ function streetLamp(x, z, ax, az) {
   const p = BK.get('pool', hx, hz); const R = 6;
   p.flat(hx - R, hz - R, hx + R, hz + R, 0.06);
 }
+// hydrants, bins and newspaper boxes along the curb
+function streetProps(r, sol, x, z, district) {
+  const k = r();
+  if (k < 0.2) {
+    sol.setColor(district === 'upscale' ? '#c9a640' : '#b8322a');
+    sol.addGeo(new THREE.CylinderGeometry(0.16, 0.19, 0.62, 8), G.mat(x, 0.49, z));
+    sol.addGeo(new THREE.SphereGeometry(0.17, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), G.mat(x, 0.8, z));
+    sol.addGeo(new THREE.CylinderGeometry(0.06, 0.06, 0.44, 6), G.mat(x, 0.6, z, 0, 0, Math.PI / 2));
+  } else if (k < 0.42) {
+    sol.setColor(district === 'industrial' ? '#4a4f55' : '#2d4a3a');
+    sol.addGeo(new THREE.CylinderGeometry(0.3, 0.26, 0.95, 10), G.mat(x, 0.66, z));
+    sol.setColor('#1e2226'); sol.addGeo(new THREE.CylinderGeometry(0.33, 0.33, 0.06, 10), G.mat(x, 1.15, z));
+  } else if (k < 0.5 && (district === 'downtown' || district === 'commercial')) {
+    sol.setColor(M.pick(r, ['#2f62b3', '#c23b33', '#e0b030']));
+    sol.box(x, 0.18, z, 0.5, 1.05, 0.45, {});
+  }
+}
 function bench(x, z, rot) { const t = BK.get('solid', x, z); t.setColor('#5a4535'); t.addGeo(new THREE.BoxGeometry(1.8, 0.1, 0.5), G.mat(x, 0.65, z, 0, rot, 0)); t.addGeo(new THREE.BoxGeometry(1.8, 0.5, 0.08), G.mat(x - Math.sin(rot + Math.PI / 2) * 0, 0.95, z, 0, rot, 0)); t.setColor('#2f3236'); t.addGeo(new THREE.BoxGeometry(1.6, 0.5, 0.4), G.mat(x, 0.43, z, 0, rot, 0)); }
 
 function buildLot(L, r) {
@@ -311,6 +329,7 @@ function buildLot(L, r) {
         const t2 = (k + 1) / n; if (t2 < 0.98) tree(r, M.lerp(p[1], p[3], t2) - p[5] * 0.3, M.lerp(p[2], p[4], t2) - p[6] * 0.3, 0.75, L.district === 'harbor');
       }
       if (r() < 0.25 && L.district !== 'industrial') { sol.setColor('#2e5d3a'); sol.box(M.lerp(p[1], p[3], t + 0.2 / n), 0.18, M.lerp(p[2], p[4], t + 0.2 / n), 0.5, 0.9, 0.5, {}); }
+      if (L.district !== 'airport') streetProps(r, sol, M.lerp(p[1], p[3], t + 0.33 / n), M.lerp(p[2], p[4], t + 0.33 / n), L.district);
     }
   }
   const d = L.district;
@@ -492,6 +511,24 @@ function addBillboard(r, x, z, h) {
   }
 }
 
+function buildTaxiStands() {
+  const pole = new G.GB(), sign = new G.GB();
+  pole.setColor('#2c3035'); sign.setColor('#ffffff');
+  const c = T.canvas(128, 64), x = c.getContext('2d');
+  x.fillStyle = '#ffc61a'; x.fillRect(0, 0, 128, 64); x.fillStyle = '#10151c'; x.font = 'bold 40px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('TAXI', 64, 34);
+  x.fillStyle = '#10151c'; for (let k = 0; k < 8; k++) x.fillRect(k * 16 + (k % 2) * 0, 0, 8, 6);
+  const tex = T.make(c, { clamp: true });
+  for (const p of W.places) {
+    const fx = Math.sin(p.face), fz = Math.cos(p.face), sx = p.x + fz * 1.6, sz = p.z - fx * 1.6; // beside the stand, along the curb
+    pole.addGeo(new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6), G.mat(sx, 1.48, sz));
+    const geo = new THREE.PlaneGeometry(0.7, 0.35);
+    sign.addGeo(geo, G.mat(sx + fx * 0.03, 2.55, sz + fz * 0.03, 0, p.face, 0));
+    sign.addGeo(geo, G.mat(sx - fx * 0.03, 2.55, sz - fz * 0.03, 0, p.face + Math.PI, 0));
+  }
+  W.scene.add(new THREE.Mesh(pole.build(), mats.metalSolid));
+  mats.taxiStand = new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.2, roughness: 0.5 });
+  W.scene.add(new THREE.Mesh(sign.build(), mats.taxiStand));
+}
 function buildRoads() {
   const g = new THREE.Mesh(new THREE.PlaneGeometry(C.SIZE, C.SIZE), mats.asphalt);
   g.rotation.x = -Math.PI / 2; g.receiveShadow = true; W.scene.add(g); W.asphalt = g;
@@ -532,7 +569,7 @@ function buildRoads() {
 function buildTrafficLights() {
   const pole = new GB(); pole.setColor('#2c3035');
   const lamp = {}; ['ns', 'ew'].forEach(a => ['r', 'y', 'g'].forEach(s => lamp[a + s] = new GB()));
-  W.signals = [];
+  W.signals = []; W.signalHeads = [];
   for (const n of W.nodes) {
     if (!n.alive || n.nb.length < 3) continue;
     W.signals.push(n.id);
@@ -547,6 +584,7 @@ function buildTrafficLights() {
       const hx1 = px - sx * 4.6, hz1 = pz; // over z-road lane -> faces z traffic (ns)
       const hx2 = px, hz2 = pz - sz * 4.6; // faces x traffic (ew)
       pole.box(hx1, 4.0, hz1, 0.45, 1.5, 0.5, {}); pole.box(hx2, 4.0, hz2, 0.5, 1.5, 0.45, {});
+      W.signalHeads.push({ x: hx1, z: hz1, axis: 'ns' }, { x: hx2, z: hz2, axis: 'ew' });
       ['r', 'y', 'g'].forEach((s, k) => {
         const y = 5.15 - k * 0.45;
         lamp['ns' + s].box(hx1, y - 0.16, hz1, 0.3, 0.32, 0.56, {});
@@ -636,7 +674,9 @@ void main(){
   vec3 col = mix(horizon, top, pow(clamp(h,0.0,1.0), 0.5));
   col = mix(col, ground, smoothstep(0.0, -0.2, h));
   float sd = max(dot(d, normalize(sunDir)), 0.0);
-  col += sunColor * (pow(sd, 1200.0) * 30.0 * (1.0-cloud*0.8) + pow(sd, 10.0) * 0.35 * (1.0 - night*0.7));
+  col += sunColor * (pow(sd, 1200.0) * 60.0 * (1.0-cloud*0.8) + pow(sd, 10.0) * 0.35 * (1.0 - night*0.7) + pow(sd, 3.0) * 0.08 * (1.0 - night));
+  float md = max(dot(d, normalize(vec3(-sunDir.x, -sunDir.y, sunDir.z) + vec3(0.0, 0.25, 0.0))), 0.0);
+  col += vec3(0.85, 0.9, 1.0) * (smoothstep(0.99955, 0.9997, md) * 2.5 + pow(md, 60.0) * 0.12) * night * (1.0 - cloud * 0.85);
   if (h > 0.0) {
     vec3 sp = floor(d * 380.0);
     float s = step(0.9978, h3(sp)) * night * smoothstep(0.0, 0.25, h) * (1.0 - cloud);
@@ -658,6 +698,7 @@ function buildSky() {
   const mat = new THREE.ShaderMaterial({ uniforms: W.skyU, vertexShader: SKY_V, fragmentShader: SKY_F, side: THREE.BackSide, depthWrite: false, fog: false });
   W.sky = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 16), mat); W.sky.renderOrder = -1; W.sky.frustumCulled = false; W.scene.add(W.sky);
   W.skyScene = new THREE.Scene(); W.skyScene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), mat));
+  buildEnvCity();
   // lights
   W.hemi = new THREE.HemisphereLight(0xbfd6ff, 0x4a4036, 0.6); W.scene.add(W.hemi);
   W.sun = new THREE.DirectionalLight(0xffffff, 2); W.sun.castShadow = true;
@@ -668,12 +709,43 @@ function buildSky() {
   // night glow points (lamp heads + beacons)
   const pts = W.lampHeads.concat(W.beacons);
   const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pts.flat(), 3));
-  W.glowMat = new THREE.PointsMaterial({ size: 5, map: T.radial(), color: 0xffcf90, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+  W.glowMat = new THREE.PointsMaterial({ size: 3.6, map: T.radial(), color: 0xffcf90, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
   W.glow = new THREE.Points(pg, W.glowMat); W.glow.frustumCulled = false; W.scene.add(W.glow);
   // lighthouse sweep beam
   const lb = new THREE.Mesh(new THREE.ConeGeometry(14, 160, 16, 1, true), new THREE.MeshBasicMaterial({ map: T.beam(), color: 0xfff1c0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
   lb.geometry.translate(0, -80, 0); lb.geometry.rotateZ(Math.PI / 2);
   W.lhBeam = lb; lb.position.set(W.lighthouse[0], W.lighthouse[1], W.lighthouse[2]); W.scene.add(lb);
+}
+
+/* Reflection-only skyline: a ring of facades and dark asphalt around the env-map camera,
+   so car paint, glass and wet roads reflect a city instead of bare sky */
+function buildEnvCity() {
+  const r = M.rng(5150);
+  const groups = {};
+  const keys = ['glass', 'office', 'brick', 'plaster'];
+  for (const k of keys) groups[k] = new G.GB();
+  for (let k = 0; k < 44; k++) {
+    const a = k / 44 * Math.PI * 2 + r() * 0.05, d = 26 + r() * 14, h = 6 + Math.pow(r(), 1.6) * 38, w = 5 + r() * 7;
+    const key = M.pick(r, keys), gb = groups[key];
+    gb.addGeo(new THREE.BoxGeometry(w, h, w), G.mat(Math.cos(a) * d, h / 2 - 1.5, Math.sin(a) * d, 0, -a, 0));
+  }
+  W.envMats = [];
+  for (const k of keys) {
+    const day = new THREE.MeshBasicMaterial({ map: mats[k].map, color: 0xffffff }), night = new THREE.MeshBasicMaterial({ map: mats[k].emissiveMap, color: 0xffffff });
+    const mesh = new THREE.Mesh(groups[k].build(), day); mesh.userData.day = day; mesh.userData.night = night;
+    W.skyScene.add(mesh); W.envMats.push(mesh);
+  }
+  W.envGround = new THREE.Mesh(new THREE.CircleGeometry(48, 24), new THREE.MeshBasicMaterial({ color: 0x2a2b2e }));
+  W.envGround.rotation.x = -Math.PI / 2; W.envGround.position.y = -1.5; W.skyScene.add(W.envGround);
+}
+function tuneEnvCity(sunI, night, dark) {
+  if (!W.envMats) return;
+  const lit = M.clamp(sunI / 2.3, 0.08, 1) * (1 - dark * 0.5);
+  for (const m of W.envMats) {
+    m.material = night > 0.55 ? m.userData.night : m.userData.day;
+    m.material.color.setScalar(night > 0.55 ? 1.4 : lit * 0.9);
+  }
+  W.envGround.material.color.setRGB(0.16 * lit + 0.01, 0.165 * lit + 0.01, 0.18 * lit + 0.012);
 }
 
 /* Time-of-day keyframes (sRGB hex) */
@@ -701,6 +773,7 @@ const _c1 = new THREE.Color(), _c2 = new THREE.Color();
 function lerpHex(a, b, t, out) { _c1.set(a); _c2.set(b); return out.copy(_c1).lerp(_c2, t); }
 let envTimer = 0, lastEnvHour = -99, lastEnvWx = '';
 W.setWeather = (w) => { W.state.weather = w; };
+W.refreshEnv = () => { envTimer = 0; lastEnvHour = -99; };
 W.update = (dt, focus, renderer) => {
   const S = W.state, set = G.Save.data.settings;
   // time
@@ -748,14 +821,25 @@ W.update = (dt, focus, renderer) => {
   mats.store.emissiveIntensity = 0.15 + nl * 1.1;
   mats.lamp.emissiveIntensity = nl * 3;
   mats.signs.emissiveIntensity = 0.25 + nl * 1.4; mats.ads.emissiveIntensity = 0.2 + nl * 1.0;
+  if (mats.taxiStand) mats.taxiStand.emissiveIntensity = 0.15 + nl * 1.3;
   mats.pool.opacity = nl * 0.55;
-  W.glowMat.opacity = nl * 0.9;
+  W.glowMat.opacity = nl * (G.FX && G.FX.post ? 0.35 : 0.9); // bloom already halos the lamps
   W.lhBeam.material.opacity = nl * 0.22 + wx.haze * 0.05 * nl;
   W.lhBeam.rotation.y += dt * 0.6;
   // wet roads
   const wet = wx.wet;
-  mats.asphalt.roughness = M.lerp(0.92, 0.28, wet); mats.asphalt.metalness = M.lerp(0, 0.25, wet);
-  mats.asphalt.color.setScalar(M.lerp(1, 0.6, wet)); mats.asphalt.envMapIntensity = M.lerp(0.4, 1.6, wet);
+  // puddles: a roughness map only while wet (switching maps recompiles the shader, so do it at a threshold)
+  const wantPuddles = wet > 0.12;
+  if (wantPuddles !== !!mats.asphalt.roughnessMap) { mats.asphalt.roughnessMap = wantPuddles ? W.puddleTex : null; mats.asphalt.needsUpdate = true; }
+  mats.asphalt.roughness = wantPuddles ? M.lerp(1, 0.55, wet) : 0.92; mats.asphalt.metalness = M.lerp(0, 0.3, wet);
+  mats.asphalt.color.setScalar(M.lerp(1, 0.42, wet)); mats.asphalt.envMapIntensity = M.lerp(0.4, 1.5, wet) * (1 - S.night * 0.75);
+  mats.sidewalk.envMapIntensity = 1 - S.night * 0.6;
+  // traffic-signal reflections on wet asphalt
+  if (wet > 0.05 && G.FX && G.FX.light) for (const h of W.signalHeads) {
+    if (Math.abs(h.x - focus.x) > 120 || Math.abs(h.z - focus.z) > 120) continue;
+    const st = W.lightState(h.axis), c = st === 'g' ? [0.1, 1.2, 0.5] : st === 'y' ? [1.3, 0.75, 0.1] : [1.4, 0.12, 0.06];
+    G.FX.light(h.x, 4.8, h.z, c[0] * 0.6, c[1] * 0.6, c[2] * 0.6, 0.45);
+  }
   mats.sidewalk.roughness = M.lerp(0.9, 0.5, wet);
   if (mats.water.map) { mats.water.map.offset.x += dt * 0.004; mats.water.map.offset.y += dt * 0.006; }
   // traffic lights
@@ -766,6 +850,7 @@ W.update = (dt, focus, renderer) => {
     envTimer = 4;
     lastEnvHour = S.hour; lastEnvWx = S.weather;
     try {
+      tuneEnvCity(W.sun.intensity, S.night, wx.dark);
       const rt = W.pmrem.fromScene(W.skyScene, 0, 0.1, 100);
       if (W.envRT) W.envRT.dispose();
       W.envRT = rt; W.scene.environment = rt.texture;
@@ -784,8 +869,10 @@ W.build = (scene, renderer) => {
   for (const L of W.lots) buildLot(L, r);
   buildOutskirts(r);
   W.meshes = BK.flush(scene, mats, { pool: { cast: false, receive: false, order: 2 }, markings: { cast: false }, sidewalk: { cast: false }, grass: { cast: false }, foliage: { cast: true }, lamp: { cast: false } });
+  buildTaxiStands();
   buildRoads(); buildTrafficLights(); buildSky();
   if (renderer) W.pmrem = new THREE.PMREMGenerator(renderer);
+  if (G.FX && G.FX.addStaticLights) G.FX.addStaticLights(W.lampHeads, 1.4, 1.0, 0.62, 0.9);
 };
 
 /* ---------- Minimap base image ---------- */

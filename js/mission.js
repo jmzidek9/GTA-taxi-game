@@ -13,7 +13,19 @@ const CATS = {
   night: { label: 'Night Ride', color: '#9b8cff', mul: 1.2, speed: 13, strict: false, xp: 10 },
   storm: { label: 'Storm Run', color: '#4ad3c4', mul: 1.3, speed: 11.5, strict: false, xp: 15 },
   fog: { label: 'Fog Run', color: '#b8c4cc', mul: 1.25, speed: 11.5, strict: false, xp: 15 },
+  tourist: { label: 'Sightseer', color: '#7ee081', mul: 1.15, speed: 10.5, strict: false, xp: 10 },
+  chase: { label: 'Follow That Car', color: '#ff8a3d', mul: 1.9, speed: 12.5, strict: false, xp: 30, chase: true },
 };
+// passenger personalities change what costs and earns mood
+const PERS = {
+  easy: { label: 'Easygoing', hint: 'Forgiving rider', harsh: 0.8, tip: 1 },
+  chatty: { label: 'Chatty', hint: 'Talks the whole way', harsh: 1, tip: 1.1 },
+  nervous: { label: 'Nervous', hint: 'Hates rough driving', harsh: 2.1, tip: 1.6, fastAt: 24 },
+  impatient: { label: 'Impatient', hint: 'Wants speed, hates waiting', harsh: 0.9, tip: 1.3, noFast: true },
+  party: { label: 'Party crowd', hint: 'Loves drifts and chases', harsh: 0.4, tip: 1.4, noFast: true },
+  tourist: { label: 'Tourist', hint: 'Enjoys the scenic route', harsh: 1, tip: 1.25 },
+};
+MS.PERS = PERS;
 MS.CATS = CATS;
 const LINES = {
   hello: ['Hi! {dest}, please.', 'Evening. Take me to {dest}?', '{dest}. And step on it, if you can.', 'Thanks for stopping. {dest}, please.'],
@@ -26,6 +38,19 @@ const LINES = {
   thanks: ['Thanks, keep the change.', 'Perfect, thank you!', 'Nice driving. Have a good one.', 'Right on time. Cheers!'],
   grumpy: ['Finally.', 'That was... a ride.', 'I\'ll walk next time.'],
   fail: ['Forget it, I\'ll walk from here.', 'Let me out. I\'ll find another cab.'],
+  chatty: ['So my sister just opened a bakery on Market Row...', 'You ever think about how many fares you\'ve driven?', 'I almost got a dog last week. Almost.', 'The ferry was late again. Classic Vale Harbor.', 'Is it me or are the lights slower downtown?', 'My podcast says the harbor used to be twice as big.'],
+  tourist: ['Wow, look at that skyline!', 'Is that the lighthouse? I have to get a photo.', 'Everyone here drives so fast.', 'What\'s the best food in town? Honestly.'],
+  nervous: ['Please, gently...', 'Are we going too fast?', 'I\'m holding on to the handle, just so you know.'],
+  impatient: ['Can we go any faster?', 'Why are we stopped?', 'Come on, the light was yellow!'],
+  party: ['WOOO! Do that again!', 'Turn it up!', 'This is the best cab in the city!'],
+  drift: ['Whoa, sideways!', 'Again! Again!'],
+  cops: ['Are those sirens for US?!', 'Oh no no no, the police!', 'Lose them!'],
+  copsParty: ['Floor it! They\'ll never catch us!', 'This is the best night ever!'],
+  ped: ['You hit someone!!', 'Oh my god, stop the car!', 'Did you just... that person!'],
+  followStart: ['See that {car}? Follow it. Don\'t lose it!', 'Quick! Follow that {car} — and stay back a little.'],
+  followClose: ['Not so close, they\'ll see us!', 'Back off a bit!'],
+  followLost: ['We lost them. Ugh. Just take me to {dest}.'],
+  followDone: ['They pulled in. Perfect. Now take me to {dest}.', 'Got what I needed. {dest}, please.'],
 };
 const say = (key, vars) => { let s = M.pick(Math.random, LINES[key]); if (vars) for (const k in vars) s = s.replace('{' + k + '}', vars[k]); return s; };
 
@@ -94,23 +119,34 @@ MS.makeOffers = (car) => {
     const r = W.routeBetween(pu.sx, pu.sz, de.sx, de.sz);
     if (!r || r.len < 200) continue;
     const toPick = W.routeBetween(car.x, car.z, pu.sx, pu.sz);
-    // category
-    const opts = ['standard'];
+    // category: weighted pool, and the three offers try to differ from each other
+    const opts = ['standard', 'tourist'];
     if (de.district === 'airport' || pu.district === 'airport') opts.push('airport', 'airport', 'airport');
     if ((de.district === 'upscale' || pu.district === 'upscale') && (lv >= 3 || S.current === 'lux')) opts.push('vip', 'vip');
     if (S.current === 'lux') opts.push('vip');
-    if (r.len > 700) opts.push('long', 'long');
+    if (r.len > 560) opts.push('long', 'long');
     if (night) opts.push('night', 'night');
     if (wx === 'rain') opts.push('storm', 'storm');
     if (wx === 'fog') opts.push('fog', 'fog');
-    if (lv >= 2) opts.push('rush');
-    const ck = out.length === 0 ? opts[opts.length - 1] : M.pick(Math.random, opts);
+    if (lv >= 2) opts.push('rush', 'chase');
+    if (lv >= 4) opts.push('chase');
+    if (S.stats.fares === 0 && out.length === 0) opts.length = 1; // the very first fare is a plain one
+    const fresh = opts.filter(k => !out.some(o => o.cat === k));
+    let ck = M.pick(Math.random, fresh.length && tries < 50 ? fresh : opts);
+    if (out.length === 0 && fresh.length > 1 && ck === 'standard' && S.stats.fares > 0) ck = M.pick(Math.random, fresh.filter(k => k !== 'standard'));
     const cat = CATS[ck];
     const veh = G.specFor(S.current, S.upgrades[S.current]);
     const limit = Math.ceil((r.len / cat.speed + 9) / 5) * 5;
     const base = Math.round((6 + r.len * 0.072) * cat.mul * veh.fare);
     usedPick[pu.id] = 1;
-    out.push({ id: offerSeq++, cat: ck, pickup: pu, dest: de, len: r.len, toPick: toPick.len, limit, base, max: Math.round(base * 2.1), seed: Math.floor(Math.random() * 1e9) });
+    // personality
+    let pers = M.pick(Math.random, ['easy', 'chatty', 'chatty', 'nervous', 'impatient']);
+    if (ck === 'tourist') pers = 'tourist';
+    else if (ck === 'rush' || ck === 'airport') pers = Math.random() < 0.6 ? 'impatient' : pers === 'impatient' ? 'nervous' : pers;
+    else if (ck === 'vip') pers = Math.random() < 0.5 ? 'nervous' : 'easy';
+    else if ((night && Math.random() < 0.45) || ck === 'chase') pers = Math.random() < 0.7 ? 'party' : pers;
+    if (S.stats.fares === 0) pers = 'easy';
+    out.push({ id: offerSeq++, cat: ck, pers, pickup: pu, dest: de, len: r.len, toPick: toPick.len, limit, base, max: Math.round(base * 2.1 * PERS[pers].tip), seed: Math.floor(Math.random() * 1e9) });
   }
   MS.offers = out;
   return out;
@@ -128,7 +164,7 @@ MS.accept = (offer, car) => {
   const h = P.makeHuman(M.rng(offer.seed), { suit: offer.cat === 'vip', bag: offer.cat === 'airport' });
   h.root.position.set(offer.pickup.x, 0.18, offer.pickup.z); h.root.rotation.y = offer.pickup.face;
   scene.add(h.root);
-  MS.cur = { offer, cat, h, name: h.name, timeLeft: offer.limit, sat: 100, hits: 0, bigHits: 0, phase: 0, t: 0, stopT: 0, lineCD: 0, overtime: false, failed: false };
+  MS.cur = { offer, cat, pers: PERS[offer.pers || 'easy'], persKey: offer.pers || 'easy', h, name: h.name, timeLeft: offer.limit, sat: 100, hits: 0, bigHits: 0, phase: 0, t: 0, stopT: 0, lineCD: 0, talkCD: 8, overtime: false, failed: false, pedHits: 0, slowT: 0, copLine: false };
   MS.state = 'toPickup';
   car.passengerAboard = false;
   setMarker(offer.pickup.sx, offer.pickup.sz, '#40e0ff');
@@ -139,6 +175,7 @@ MS.accept = (offer, car) => {
 };
 MS.abandon = (car) => {
   if (!MS.cur) return;
+  if (MS.cur.target) { G.Traffic.releaseChase(MS.cur.target); MS.cur.target = null; }
   const wasAboard = MS.state === 'delivering' || MS.state === 'boarding';
   if (car) { car.locked = false; car.model.doorPivot.rotation.y = 0; car.passengerAboard = false; }
   clearPassenger();
@@ -147,7 +184,45 @@ MS.abandon = (car) => {
 };
 MS.retry = (car) => { const o = MS.lastOffer; if (!o) return; MS.abandon(car); const fresh = Object.assign({}, o, { id: offerSeq++ }); MS.accept(fresh, car); };
 MS.interact = () => { if (MS.cur) MS.cur.interact = true; };
-MS.isActive = () => !!MS.cur && ['toPickup', 'boarding', 'delivering', 'alighting', 'failExit'].indexOf(MS.state) >= 0;
+MS.isActive = () => !!MS.cur && ['toPickup', 'boarding', 'following', 'delivering', 'alighting', 'failExit'].indexOf(MS.state) >= 0;
+MS.aboard = () => !!MS.cur && (MS.state === 'following' || MS.state === 'delivering');
+// shared ride-mood rules for everything that happens with a passenger in the back
+function rideMood(c, car, dt, spd, near) {
+  const P0 = c.pers, comfort = (car.spec.comfort || 1) / (c.cat.comfort || 1);
+  if (car.impact > 1.5) {
+    c.sat -= Math.min(30, car.impact * 2.6) / comfort * (P0.harsh > 1.5 ? 1.4 : 1); c.hits++; if (car.impact > 6) c.bigHits++;
+    if (c.lineCD <= 0) { G.UI.say(c.name, say('hit')); c.lineCD = 4; }
+  }
+  const drifting = car.slip > 4.5 && spd > 6;
+  if (c.persKey === 'party' && drifting) { c.sat += dt * 9; if (c.lineCD <= 0) { G.UI.say(c.name, say('drift')); c.lineCD = 6; } }
+  else if (Math.abs(car.aLat) > 9 || drifting) c.sat -= dt * 7 * P0.harsh / comfort;
+  const fastAt = P0.fastAt || 33;
+  if (!P0.noFast && spd > fastAt && c.cat !== CATS.rush) { c.sat -= dt * 2.5 * P0.harsh / comfort; if (c.lineCD <= 0) { G.UI.say(c.name, say(c.persKey === 'nervous' ? 'nervous' : 'fast')); c.lineCD = 8; } }
+  if (c.persKey === 'impatient') {
+    if (spd < 2.5 && !near) { c.slowT += dt; if (c.slowT > 3) { c.sat -= dt * 3.5; if (c.lineCD <= 0) { G.UI.say(c.name, say('impatient')); c.lineCD = 7; } } }
+    else { c.slowT = 0; if (spd > 22) c.sat += dt * 0.8; }
+  }
+  if (c.persKey === 'tourist' && spd < 18) c.sat += dt * 0.4;
+  // small talk
+  c.talkCD -= dt;
+  if (c.talkCD <= 0 && c.lineCD <= 0) {
+    const key = c.persKey === 'chatty' ? 'chatty' : c.persKey === 'tourist' ? 'tourist' : c.persKey === 'party' ? 'party' : null;
+    c.talkCD = 14 + Math.random() * 8;
+    if (key) { G.UI.say(c.name, say(key)); c.lineCD = 5; }
+  }
+  // police pursuit
+  if (G.Police.stars > 0) {
+    if (c.persKey === 'party') c.sat += dt * 1.5; else c.sat -= dt * (c.persKey === 'nervous' ? 6 : 2.2);
+    if (!c.copLine) { c.copLine = true; G.UI.say(c.name, say(c.persKey === 'party' ? 'copsParty' : 'cops')); c.lineCD = 5; }
+  } else c.copLine = false;
+  c.sat = M.clamp(c.sat, 0, 100);
+}
+G.on('pedHit', () => { const c = MS.cur; if (!c || !MS.aboard()) return; c.sat = Math.max(0, c.sat - 45); c.pedHits++; G.UI.say(c.name, say('ped')); c.lineCD = 5; });
+G.on('busted', () => {
+  if (!MS.isActive()) return;
+  const car = G.player, c = MS.cur;
+  MS.abandon(car); G.UI.toast(`${c.name.split(' ')[0]} slipped out while you were busted`, 'bad');
+});
 
 const WALK = 1.7;
 function walkTo(h, tx, tz, dt, speed) {
@@ -196,26 +271,47 @@ MS.update = (dt, car) => {
     c.interact = false;
   } else if (MS.state === 'boarding') {
     updateBoarding(dt, car);
+  } else if (MS.state === 'following') {
+    let tc = c.target;
+    if (!tc) {
+      // no suitable car in range yet: keep looking for a few seconds
+      c.searchT += dt; c.searchCD = (c.searchCD || 0) - dt;
+      if (c.searchCD <= 0) { c.searchCD = 0.5; tc = acquireTarget(car); }
+      if (!tc) {
+        G.UI.objective('Look for the car', `${c.name.split(' ')[0]} is watching for it…`, null);
+        if (c.searchT > 10) { G.UI.toast('The car never showed. Straight to the destination'); endFollow(car, false, true); }
+        return;
+      }
+    }
+    const tname = c.targetName || 'car';
+    if (!tc.chase || !tc.model.root.visible) { endFollow(car, false); return; }
+    MS.target = { x: tc.x, z: tc.z, kind: 'follow' };
+    setMarker(tc.x, tc.z, CATS.chase.color);
+    const d = M.dist(car.x, car.z, tc.x, tc.z);
+    c.t += dt;
+    if (d < 75) c.followT += dt;
+    c.lostT = d > 110 ? c.lostT + dt : Math.max(0, c.lostT - dt);
+    if (d < 9 && c.lineCD <= 0) { G.UI.say(c.name, say('followClose')); c.lineCD = 6; }
+    if (d < 9) c.sat -= dt * 2;
+    rideMood(c, car, dt, spd, false);
+    const left = Math.max(0, c.followNeed - c.followT);
+    G.UI.objective(`Follow the ${tname}`, d < 75 ? `Tailing · ${Math.ceil(left)} s to go` : d > 110 ? 'Losing them — catch up!' : 'Get closer (75 m)', Math.round(d));
+    G.UI.follow(c.followT / c.followNeed, c.lostT / 6);
+    if (c.lostT > 6) endFollow(car, false);
+    else if (c.followT >= c.followNeed) endFollow(car, true);
+    G.UI.prompt(null);
+    c.interact = false;
   } else if (MS.state === 'delivering' || MS.state === 'failExit') {
     MS.target = { x: o.dest.sx, z: o.dest.sz, kind: 'dest' };
     const d = M.dist(car.x, car.z, o.dest.sx, o.dest.sz);
     if (MS.state === 'delivering') {
       c.timeLeft -= dt;
       c.t += dt;
-      // ride quality
-      const comfort = (car.spec.comfort || 1) / (c.cat.comfort || 1);
-      if (car.impact > 1.5) {
-        c.sat -= Math.min(30, car.impact * 2.6) / comfort; c.hits++; if (car.impact > 6) c.bigHits++;
-        if (c.lineCD <= 0) { G.UI.say(c.name, say('hit')); c.lineCD = 4; }
-      }
-      const harsh = Math.abs(car.aLat) > 9 || car.slip > 4.5;
-      if (harsh) c.sat -= dt * 7 / comfort;
-      if (spd > 33 && o.cat !== 'rush') { c.sat -= dt * 2.5 / comfort; if (c.lineCD <= 0) { G.UI.say(c.name, say('fast')); c.lineCD = 8; } }
+      rideMood(c, car, dt, spd, d < 25);
       if (c.timeLeft < 0) {
         if (!c.overtime) { c.overtime = true; G.UI.say(c.name, say('late')); G.Audio.chime('gps'); }
         if (c.cat.strict || c.timeLeft < -o.limit * 0.5) { failRide(car, c.cat.strict ? 'Out of time. Rush fares have a hard deadline.' : 'Far too late. The passenger gave up on the ride.'); }
       }
-      c.sat = M.clamp(c.sat, 0, 100);
       G.UI.objective(`Drive ${c.name.split(' ')[0]} to ${o.dest.name}`, o.dest.dname, Math.round(d));
     } else G.UI.objective(`Pull over to let ${c.name.split(' ')[0]} out`, 'Fare cancelled', null);
     const nearDest = MS.state === 'delivering' ? d < 11 : true;
@@ -281,14 +377,46 @@ function updateBoarding(dt, car) {
     if (k >= 1) {
       G.Audio.door(false);
       car.locked = false; car.passengerAboard = true;
-      MS.state = 'delivering'; c.stopT = 0; c.t = 0;
-      setMarker(c.offer.dest.sx, c.offer.dest.sz, '#ffb321'); MS.routeT = 0;
+      c.stopT = 0; c.t = 0;
       G.Audio.chime('board');
+      if (c.cat.chase) { startFollow(car); return; }
+      MS.state = 'delivering';
+      setMarker(c.offer.dest.sx, c.offer.dest.sz, '#ffb321'); MS.routeT = 0;
       const key = c.offer.cat === 'airport' ? 'airport' : c.offer.cat === 'vip' ? 'vip' : c.offer.cat === 'rush' ? 'rush' : 'hello';
       G.UI.say(c.name, say(key, { dest: c.offer.dest.name }));
       G.UI.toast(`Meter running · ${Math.round(c.offer.limit)} s to ${c.offer.dest.name}`);
     }
   }
+}
+const CAR_NAMES = { sedan: 'sedan', suv: 'SUV', sport: 'sports car', lux: 'limo', super: 'supercar' };
+const COLOR_NAMES = { '#e8e8ea': 'silver', '#1b1d22': 'black', '#8a8f96': 'grey', '#c0392b': 'red', '#2d3e50': 'navy', '#3b5bdb': 'blue', '#1f7a5c': 'green', '#d8cfc0': 'beige', '#6d2b3a': 'maroon', '#f0f0f0': 'white', '#4a4f55': 'charcoal', '#b5651d': 'bronze' };
+function startFollow(car) {
+  const c = MS.cur;
+  c.target = null; c.followT = 0; c.followNeed = 35 + Math.round(Math.random() * 15); c.lostT = 0; c.searchT = 0;
+  MS.state = 'following'; MS.routeT = 0; MS.target = null;
+  acquireTarget(car);
+  return true;
+}
+function acquireTarget(car) {
+  const c = MS.cur, tc = G.Traffic.pickChaseTarget(car);
+  if (!tc) return null;
+  c.target = tc;
+  c.targetName = (COLOR_NAMES[tc.color] ? COLOR_NAMES[tc.color] + ' ' : '') + (CAR_NAMES[tc.type] || 'car');
+  G.UI.say(c.name, say('followStart', { car: c.targetName }));
+  G.UI.toast(`Tail the ${c.targetName} for ${c.followNeed} s`);
+  return tc;
+}
+function endFollow(car, ok, quiet) {
+  const c = MS.cur;
+  G.Traffic.releaseChase(c.target); c.target = null;
+  c.followOk = ok; c.followBonus = ok ? Math.round(c.offer.base * 0.55) : 0;
+  if (!ok && !quiet) c.sat -= 15;
+  G.UI.follow(null);
+  if (!quiet) G.UI.say(c.name, say(ok ? 'followDone' : 'followLost', { dest: c.offer.dest.name }));
+  if (ok) G.Audio.chime('done'); else G.Audio.chime('gps');
+  MS.state = 'delivering';
+  setMarker(c.offer.dest.sx, c.offer.dest.sz, '#ffb321'); MS.routeT = 0;
+  G.UI.toast(`Meter running · ${Math.round(c.timeLeft)} s to ${c.offer.dest.name}`);
 }
 function failRide(car, reason) {
   const c = MS.cur; if (c.failed) return;
@@ -344,26 +472,32 @@ function computeResult(c, car) {
   const quality = M.clamp(100 - c.hits * 7 - c.bigHits * 10, 0, 100);
   const qualityBonus = quality >= 50 ? Math.round(base * 0.25 * quality / 100) : 0;
   const sat = Math.round(c.sat);
-  const tip = Math.round(base * 0.35 * Math.pow(sat / 100, 2));
+  const condition = Math.round(100 - (car.damage || 0));
+  const tip = Math.round(base * 0.35 * Math.pow(sat / 100, 2) * (c.pers ? c.pers.tip : 1) * (1 - (100 - condition) / 100 * 0.6));
   const streak = G.Save.data.streak;
   const streakBonus = Math.round(base * Math.min(0.25, 0.05 * streak));
-  const total = Math.max(0, base + timeAdj + qualityBonus + tip + streakBonus);
+  const followBonus = c.followBonus || 0;
+  const fines = Math.round(G.Save.data.fines || 0);
+  const total = Math.max(0, base + timeAdj + qualityBonus + tip + streakBonus + followBonus - fines);
   const stars = M.clamp(Math.round(sat / 20), 1, 5);
   const xp = Math.round(total * 0.5 + 15 + (c.cat.xp || 0));
-  return { base, timeAdj, timeLeft: c.timeLeft, quality, qualityBonus, sat, tip, streak: streak + 1, streakBonus, total, stars, xp, hits: c.hits, rideTime: c.t };
+  return { base, timeAdj, timeLeft: c.timeLeft, quality, qualityBonus, sat, tip, streak: streak + 1, streakBonus, followBonus, followOk: c.followOk, fines, condition, pers: c.pers, total, stars, xp, hits: c.hits, pedHits: c.pedHits, rideTime: c.t, cat: c.offer.cat };
 }
 function finishSuccess(c, car) {
   const S = G.Save.data, r = c.result;
   const lvBefore = G.level(S.xp);
+  S.fines = 0;
   S.cash += r.total; S.xp += r.xp; S.streak++; S.stats.fares++; S.stats.earned += r.total; S.stats.bestStreak = Math.max(S.stats.bestStreak, S.streak);
   r.trip = S.trip++; r.balance = S.cash; r.levelUp = G.level(S.xp) > lvBefore ? G.level(S.xp) : 0;
   S.started = true; G.Save.write();
   G.UI.say(c.name, say(r.sat > 55 ? 'thanks' : 'grumpy'));
   G.Audio.chime('done');
   G.UI.showComplete(c, r);
+  G.emit('fareDone', r);
 }
 function finishFail(c) {
   const S = G.Save.data; S.streak = 0; S.stats.failed++; S.started = true; G.Save.write();
+  G.emit('fareFailed', c.offer.cat);
   G.UI.showFail(c, c.failReason || 'Fare cancelled.');
 }
 MS.toWorld = toWorld;

@@ -10,6 +10,11 @@ C.SIZE = C.N * C.CELL + C.ROAD;
 C.HALF = C.SIZE / 2;
 G.roadPos = i => -C.HALF + C.ROAD / 2 + i * C.CELL;
 
+/* ---------- Tiny event bus (fare done, ped hit, escaped police...) ---------- */
+const handlers = {};
+G.on = (ev, fn) => { (handlers[ev] = handlers[ev] || []).push(fn); };
+G.emit = (ev, data) => { (handlers[ev] || []).forEach(fn => { try { fn(data); } catch (e) { console.error(e); } }); };
+
 /* ---------- Math helpers ---------- */
 const M = G.M = {
   clamp: (v, a, b) => v < a ? a : v > b ? b : v,
@@ -201,6 +206,17 @@ T.arrows = () => {
   x.beginPath(); x.moveTo(8, 70); x.lineTo(32, 40); x.lineTo(56, 70); x.lineTo(56, 88); x.lineTo(32, 58); x.lineTo(8, 88); x.closePath(); x.fill();
   const t = T.make(c, { srgb: false }); t.wrapS = THREE.ClampToEdgeWrapping; return t;
 };
+T.puddles = () => {
+  // roughness map (green channel): dark = mirror-like puddle, light = damp asphalt
+  const c = T.canvas(512, 512), x = c.getContext('2d');
+  x.fillStyle = 'rgb(150,150,150)'; x.fillRect(0, 0, 512, 512);
+  for (let k = 0; k < 26; k++) {
+    const px = Math.random() * 512, py = Math.random() * 512, r = 18 + Math.random() * 60;
+    for (let q = 0; q < 6; q++) { const g = x.createRadialGradient(px + (Math.random() - 0.5) * r, py + (Math.random() - 0.5) * r, 0, px, py, r); g.addColorStop(0, 'rgba(18,18,18,0.9)'); g.addColorStop(0.6, 'rgba(30,30,30,0.6)'); g.addColorStop(1, 'rgba(40,40,40,0)'); x.fillStyle = g; x.beginPath(); x.ellipse(px, py, r * (0.6 + Math.random()), r * (0.4 + Math.random() * 0.6), Math.random() * 3, 0, 7); x.fill(); }
+  }
+  noise(x, 512, 512, 30);
+  return T.make(c, { srgb: false });
+};
 /* Facade styles. Each texture = one module of cols x rows window bays. */
 const BAY = 3.6, FLOOR = 3.5;
 T.BAY = BAY; T.FLOOR = FLOOR;
@@ -305,19 +321,46 @@ T.taxiSign = () => {
 };
 
 /* ---------- Save system ---------- */
-const DEFAULT_SETTINGS = { quality: 'auto', volume: 0.7, sens: 1, units: 'mph', fov: 68, shake: true, timeMode: 'cycle', weatherMode: 'auto', showFps: false, assist: true };
+const DEFAULT_SETTINGS = { quality: 'auto', volume: 0.7, radioVol: 0.5, station: 0, sens: 1, units: 'mph', fov: 68, shake: true, timeMode: 'cycle', weatherMode: 'auto', showFps: false, assist: true, post: true };
+const SAVE_VERSION = 2;
+// Each step upgrades a save from version k to k + 1. Never edit a step once shipped; add a new one.
+const MIGRATIONS = {
+  1: d => { d.damage = d.damage || {}; d.fines = d.fines || 0; d.daily = null; d.tutorial = { done: (d.stats && d.stats.fares > 0) || false }; },
+};
 G.Save = {
-  key: 'crosstown.save.v1',
+  key: 'crosstown.save.v1', // key kept from v1 so existing careers carry over; the format version lives inside
+  version: SAVE_VERSION,
   data: null,
   fresh() {
-    return { cash: 250, xp: 0, owned: ['sedan'], current: 'sedan', upgrades: {}, paint: {}, stats: { fares: 0, earned: 0, failed: 0, bestStreak: 0 }, streak: 0, trip: 1, started: false, settings: Object.assign({}, DEFAULT_SETTINGS) };
+    return { version: SAVE_VERSION, cash: 250, xp: 0, owned: ['sedan'], current: 'sedan', upgrades: {}, paint: {}, damage: {}, fines: 0, daily: null, tutorial: { done: false },
+      stats: { fares: 0, earned: 0, failed: 0, bestStreak: 0, pedsHit: 0, escapes: 0, busted: 0, goals: 0 }, streak: 0, trip: 1, started: false, settings: Object.assign({}, DEFAULT_SETTINGS) };
+  },
+  migrate(d) {
+    let v = typeof d.version === 'number' ? d.version : 1;
+    if (v > SAVE_VERSION) return d; // written by a newer build: keep what we understand
+    while (v < SAVE_VERSION) { if (MIGRATIONS[v]) MIGRATIONS[v](d); v++; }
+    d.version = SAVE_VERSION;
+    return d;
   },
   load() {
     let d = null;
     try { const s = localStorage.getItem(this.key); if (s) d = JSON.parse(s); } catch (e) { d = null; }
-    this.data = Object.assign(this.fresh(), d || {});
+    if (!d || typeof d !== 'object') d = null;
+    else { try { d = this.migrate(d); } catch (e) { d = null; } }
+    const f = this.fresh();
+    this.data = Object.assign(f, d || {});
     this.data.settings = Object.assign({}, DEFAULT_SETTINGS, (d && d.settings) || {});
     this.data.stats = Object.assign(this.fresh().stats, (d && d.stats) || {});
+    // repair anything a hand-edited or half-written save could break
+    const S = this.data;
+    if (!isFinite(S.cash)) S.cash = 250;
+    if (!isFinite(S.xp)) S.xp = 0;
+    if (!Array.isArray(S.owned)) S.owned = ['sedan'];
+    S.owned = S.owned.filter(k => G.VEHICLES ? !!G.VEHICLES[k] : true);
+    if (S.owned.indexOf('sedan') < 0) S.owned.unshift('sedan');
+    if (S.owned.indexOf(S.current) < 0) S.current = 'sedan';
+    ['upgrades', 'paint', 'damage'].forEach(k => { if (!S[k] || typeof S[k] !== 'object') S[k] = {}; });
+    if (!S.tutorial || typeof S.tutorial !== 'object') S.tutorial = { done: false };
     return this.data;
   },
   write() { try { localStorage.setItem(this.key, JSON.stringify(this.data)); } catch (e) { /* storage unavailable: progress lives for this session */ } },
@@ -404,5 +447,21 @@ const A = G.Audio = {
     seq.forEach((f, k) => setTimeout(() => this.env('sine', f, 0.28, 0.16), k * 110));
   },
   horn() { this.env('square', 392, 0.35, 0.12); this.env('square', 466, 0.35, 0.1); },
+  thud(i) { this.burst(0.18, M.clamp(i / 14, 0.15, 0.7), 160, 1.2); this.env('sine', 110, 0.2, M.clamp(i / 20, 0.1, 0.4), 45); },
+  // police siren: a wailing two-oscillator voice; vol 0 silences it
+  siren(vol, t) {
+    if (!this.ok) return; const ctx = this.ctx, now = ctx.currentTime;
+    if (!this.sGain) {
+      this.sGain = ctx.createGain(); this.sGain.gain.value = 0;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.8;
+      this.s1 = ctx.createOscillator(); this.s1.type = 'sawtooth'; this.s2 = ctx.createOscillator(); this.s2.type = 'square';
+      const g2 = ctx.createGain(); g2.gain.value = 0.35;
+      this.s1.connect(f); this.s2.connect(g2).connect(f); f.connect(this.sGain).connect(this.out);
+      this.s1.start(); this.s2.start();
+    }
+    const fr = 720 + 380 * Math.sin(t * 2.4);
+    this.s1.frequency.setTargetAtTime(fr, now, 0.03); this.s2.frequency.setTargetAtTime(fr * 1.5, now, 0.03);
+    this.sGain.gain.setTargetAtTime(vol * 0.09, now, 0.15);
+  },
 };
 })();
