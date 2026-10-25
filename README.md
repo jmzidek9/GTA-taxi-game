@@ -26,7 +26,7 @@ A 3D taxi game set in a city that never sees daylight. Take a fare from dispatch
 - **Fares:** ten fare types, including Sightseer and Follow That Car (tail a car without losing it, then drop off). Every passenger has a personality — nervous, impatient, chatty, tourist or party crowd — that changes what costs and earns their tip.
 - **Police:** running reds, speeding past a cruiser, crashing into traffic or hitting a pedestrian raises your wanted level. Patrol cars join the chase; break line of sight to escape, or get boxed in and busted. Red-light cameras send fines that come off your next fare.
 - **Living streets:** pedestrians wait for the walk signal, cross at crosswalks, jaywalk, dive out of the way, and get knocked down if you don't stop. Traffic brakes for them.
-- **Your cab:** persistent damage with dents, dulling paint and a smoking engine; a damaged cab earns smaller tips and loses power. Repair, upgrade and repaint in the garage (5 cars).
+- **Your cab:** you start in a black Vanta GT sports car. Persistent damage with dents, dulling paint and a smoking engine; a damaged cab earns smaller tips and loses power. Repair, upgrade and repaint in the garage (5 cars).
 - **Daily goals** (three per day), first-shift coaching, three procedural radio stations.
 - **Looks:** HDR bloom and film grade, headlight beams, wet-road light reflections and puddles, tire smoke, sparks and rain splashes, city reflections on paint and glass, cinematic title camera, an always-night clock that loops dusk to dawn, and changing weather.
 <p align="center"><img src="media/screenshot-rain.png" alt="Rainy night with wet-road reflections" width="720"></p>
