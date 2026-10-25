@@ -5,7 +5,7 @@ const G = window.G, M = G.M, C = G.CFG, W = G.World, GB = G.GB;
 const TR = G.Traffic = { cars: [], scene: null };
 const COLORS = ['#e8e8ea', '#1b1d22', '#8a8f96', '#c0392b', '#2d3e50', '#3b5bdb', '#1f7a5c', '#d8cfc0', '#6d2b3a', '#f0f0f0', '#4a4f55', '#b5651d'];
 const TYPES = ['sedan', 'sedan', 'sedan', 'suv', 'suv', 'sport', 'lux'];
-const STOP = 9.5; // distance from node center to stop line
+const STOP = 12.2; // distance from node center to a stopped car's center (bumper just behind the crosswalk)
 let paintMat = null;
 
 function laneFrame(a, b) {
@@ -37,11 +37,17 @@ function makeTurn(car) {
 function bez(a, b, c, t) { const u = 1 - t; return [u * u * a[0] + 2 * u * t * b[0] + t * t * c[0], u * u * a[1] + 2 * u * t * b[1] + t * t * c[1]]; }
 function bezTan(a, b, c, t) { const u = 1 - t; return [2 * u * (b[0] - a[0]) + 2 * t * (c[0] - b[0]), 2 * u * (b[1] - a[1]) + 2 * t * (c[1] - b[1])]; }
 
-function newCar() {
-  const type = M.pick(Math.random, TYPES), color = M.pick(Math.random, COLORS);
-  const m = G.buildCar(type, color, { simple: true, paintMat });
+function newCar(police) {
+  const type = police ? 'sedan' : M.pick(Math.random, TYPES), color = M.pick(Math.random, COLORS);
+  let m;
+  if (police) m = G.Police.buildModel();
+  else {
+    m = G.buildCar(type, color, { simple: true, paintMat });
+    m.root.add(G.FX.blob(m.dims.W + 0.9, m.dims.L + 1.1));
+    m.beams = new THREE.Mesh(G.FX.beamGeometry(m.dims, 14), G.FX.beamMaterial()); m.beams.visible = false; m.root.add(m.beams);
+  }
   TR.scene.add(m.root);
-  return { model: m, type, x: 0, z: 0, heading: 0, speed: 0, target: 12, cruise: 10 + Math.random() * 5, mode: 'edge', a: 0, b: 0, s: 0, wait: 0, honkT: 0 };
+  return { model: m, type, color, police: !!police, x: 0, z: 0, heading: 0, speed: 0, target: 12, cruise: 10 + Math.random() * 5, mode: 'edge', a: 0, b: 0, s: 0, wait: 0, honkT: 0 };
 }
 function placeCar(car, focus, minD, maxD) {
   for (let tries = 0; tries < 40; tries++) {
@@ -69,7 +75,7 @@ TR.init = (scene, count, focus) => {
   if (!paintMat) paintMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.32, envMapIntensity: 1.1 });
   for (const c of TR.cars) scene.remove(c.model.root);
   TR.cars = [];
-  for (let k = 0; k < count; k++) { const c = newCar(); TR.cars.push(c); placeCar(c, focus, 30, 230); }
+  for (let k = 0; k < count; k++) { const c = newCar(k < 2); TR.cars.push(c); placeCar(c, focus, 30, 230); }
   // headlight / taillight glow sprites
   if (!TR.glow) {
     const n = 80 * 4;
@@ -105,31 +111,52 @@ TR.buildParked = (scene) => {
   const list = [[gbs.paint, pm], [gbs.glass, S.glass], [gbs.dark, S.dark], [gbs.head, S.trafficHead], [gbs.tail, S.trafficTail]];
   for (const [gb, mat] of list) { if (gb.empty()) continue; const mesh = new THREE.Mesh(gb.build(), mat); mesh.castShadow = mat === pm; scene.add(mesh); }
 };
+// Follow-that-car: mark a car ahead of the player as the target
+TR.pickChaseTarget = (player) => {
+  const fx = Math.sin(player.heading), fz = Math.cos(player.heading);
+  let best = null, bs = Infinity;
+  for (const c of TR.cars) {
+    if (!c.model.root.visible || c.chase || c.police) continue;
+    const dx = c.x - player.x, dz = c.z - player.z, d = Math.hypot(dx, dz);
+    if (d < 25 || d > 120) continue;
+    const ahead = (dx * fx + dz * fz) / d, score = d * (1.6 - ahead);
+    if (score < bs) { bs = score; best = c; }
+  }
+  if (!best) return null;
+  best.chase = true; best.runsReds = Math.random() < 0.6; best.wait = 0;
+  return best;
+};
+TR.releaseChase = (c) => { if (c) { c.chase = false; c.runsReds = false; } };
 // player-facing collision circles
 TR.circles = () => {
   const out = [];
   for (const c of TR.cars) {
     if (!c.model.root.visible) continue;
     const d = c.model.dims, fx = Math.sin(c.heading), fz = Math.cos(c.heading), o = d.L / 2 - d.W / 2;
-    const hit = (imp) => { c.wait = Math.max(c.wait, 2.5); c.speed *= 0.3; if (imp > 2 && c.honkT <= 0) { c.honkT = 4; G.Audio.horn(); } };
+    const hit = (imp) => {
+      c.wait = Math.max(c.wait, 2.5); c.speed *= 0.3; if (imp > 2 && c.honkT <= 0) { c.honkT = 4; G.Audio.horn(); }
+      if (G.player.speed < 5) return;
+      if (c.police && imp > 4) G.Police.offense('ramCop', G.player); else if (imp > 6) G.Police.offense('crash', G.player);
+    };
     out.push([c.x + fx * o, c.z + fz * o, d.W / 2, c.speed * fx, c.speed * fz, hit], [c.x - fx * o, c.z - fz * o, d.W / 2, c.speed * fx, c.speed * fz, hit]);
   }
   return out;
 };
 TR.update = (dt, focus, player, night) => {
+  const peds = G.People.Peds.obstacles();
   const pfx = Math.sin(player.heading), pfz = Math.cos(player.heading);
   focus.fx = pfx; focus.fz = pfz;
   for (const car of TR.cars) {
     if (!car.model.root.visible) { placeCar(car, focus, 90, 240); continue; }
-    if (M.dist(car.x, car.z, focus.x, focus.z) > 270) { placeCar(car, focus, 90, 240); continue; }
+    if (M.dist(car.x, car.z, focus.x, focus.z) > (car.chase ? 520 : 270)) { if (car.chase && TR.onLost) TR.onLost(car); placeCar(car, focus, 90, 240); continue; }
     car.honkT -= dt;
     const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
-    let target = car.mode === 'turn' && !car.curve.straight ? 6.5 : car.cruise;
+    let target = car.mode === 'turn' && !car.curve.straight ? (car.chase ? 9 : 6.5) : car.chase ? 18 : car.cruise;
     if (G.World.state.wx.wet > 0.5) target *= 0.85;
     // signals
     if (car.mode === 'edge') {
       const f = laneFrame(car.a, car.b), dist = f.len - STOP - car.s;
-      if (W.signals.indexOf(car.b) >= 0) {
+      if (W.signals.indexOf(car.b) >= 0 && !(car.chase && car.runsReds)) {
         const axis = Math.abs(f.fz) > 0.5 ? 'ns' : 'ew', st = W.lightState(axis);
         if (st !== 'g' && dist > -0.5) {
           const committed = st === 'y' && dist < car.speed * 1.1;
@@ -148,7 +175,9 @@ TR.update = (dt, focus, player, night) => {
       gapV = Math.min(gapV, Math.sqrt(Math.max(0, 2 * 5 * (gap - 0.5))) + Math.max(0, ov) * 0.6);
     };
     for (const o of TR.cars) if (o !== car && o.model.root.visible) check(o.x, o.z, o.speed * (Math.sin(o.heading) * fx + Math.cos(o.heading) * fz));
-    check(player.x, player.z, player.vx * fx + player.vz * fz);
+    if (!car.chase) check(player.x, player.z, player.vx * fx + player.vz * fz);
+    for (const ped of peds) check(ped.x, ped.z, 0);
+    if (G.Police) for (const u of G.Police.units) check(u.x, u.z, u.speed * (Math.sin(u.heading) * fx + Math.cos(u.heading) * fz));
     target = Math.min(target, gapV);
     car.target = target;
     if (car.wait > 0) { car.wait -= dt; target = 0; }
@@ -179,21 +208,27 @@ TR.update = (dt, focus, player, night) => {
   // glows
   const pos = TR.glow.geometry.attributes.position, col = TR.glow.geometry.attributes.color;
   let k = 0;
+  const beamOn = night > 0.15;
+  for (const car of TR.cars) car.model.beams.visible = beamOn && car.model.root.visible && M.dist(car.x, car.z, focus.x, focus.z) < 160;
   if (night > 0.05) {
     for (const car of TR.cars) {
       if (!car.model.root.visible || k >= pos.count - 4) continue;
+      const near = M.dist(car.x, car.z, focus.x, focus.z) < 140;
       const d = car.model.dims, fx = Math.sin(car.heading), fz = Math.cos(car.heading), rx = -fz, rz = fx;
       const braking = car.speed < car.target - 0.5;
       for (const sx of [-1, 1]) {
         const hx = car.x + fx * (d.L / 2 + 0.1) + rx * sx * (d.W / 2 - 0.33), hz = car.z + fz * (d.L / 2 + 0.1) + rz * sx * (d.W / 2 - 0.33);
         pos.setXYZ(k, hx, d.belt - d.nose - 0.12, hz); col.setXYZ(k, 1, 0.93, 0.8); k++;
+        if (near && sx > 0) G.FX.light(car.x + fx * (d.L / 2 + 0.1), 0.7, car.z + fz * (d.L / 2 + 0.1), 1.2 * night, 1.1 * night, 0.9 * night, 0.9);
         const tx = car.x - fx * (d.L / 2 + 0.05) + rx * sx * (d.W / 2 - 0.3), tz = car.z - fz * (d.L / 2 + 0.05) + rz * sx * (d.W / 2 - 0.3);
         pos.setXYZ(k, tx, d.belt - 0.2, tz); col.setXYZ(k, braking ? 1 : 0.6, 0.05, 0.03); k++;
+        if (near && sx > 0) G.FX.light(car.x - fx * (d.L / 2), 0.8, car.z - fz * (d.L / 2), (braking ? 1.5 : 0.7) * night, 0.04, 0.02, 0.8);
       }
     }
   }
   for (let q = k; q < pos.count; q++) pos.setXYZ(q, 0, -100, 0);
   pos.needsUpdate = true; col.needsUpdate = true;
   TR.glowMat.opacity = night * 0.85;
+  G.FX.beamMaterial().uniforms.strength.value = night * (0.07 + W.state.wx.haze * 0.16 + W.state.wx.rain * 0.1);
 };
 })();

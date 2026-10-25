@@ -34,6 +34,7 @@ UI.pollInput = (dt) => {
     if (gp.buttons[1] && gp.buttons[1].pressed) hb = true;
     const edge = (i, fn) => { const p = gp.buttons[i] && gp.buttons[i].pressed; if (p && !padPrev[i]) fn(); padPrev[i] = p; };
     edge(0, () => UI.onAction('interact')); edge(3, () => UI.onAction('camera')); edge(9, () => UI.onAction('pause')); edge(2, () => UI.onAction('fares'));
+    edge(5, () => UI.onAction('radio')); edge(4, () => UI.onAction('horn'));
   }
   input.gas = gas; input.brake = brake; input.steer = M.clamp(steer, -1, 1); input.hb = hb;
   return input;
@@ -43,7 +44,7 @@ window.addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
   keys[e.code] = true;
   G.Audio.init();
-  const map = { KeyC: 'camera', KeyE: 'interact', Escape: 'pause', KeyP: 'pause', KeyF: 'fares', KeyR: 'recover', KeyH: 'horn', Enter: 'enter', Digit1: 'o1', Digit2: 'o2', Digit3: 'o3', KeyM: 'mute' };
+  const map = { KeyC: 'camera', KeyE: 'interact', Escape: 'pause', KeyP: 'pause', KeyF: 'fares', KeyR: 'recover', KeyH: 'horn', Enter: 'enter', Digit1: 'o1', Digit2: 'o2', Digit3: 'o3', KeyM: 'mute', KeyQ: 'radio' };
   if (map[e.code] && !e.repeat) UI.onAction(map[e.code]);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.code) >= 0) e.preventDefault();
 });
@@ -85,6 +86,7 @@ UI.init = () => {
 UI.refreshMoney = () => {
   const S = G.Save.data, lv = G.level(S.xp), a = G.levelXp(lv), b = G.levelXp(lv + 1);
   setText($('#cash'), money(S.cash));
+  const f = $('#fines'); if (f) { f.hidden = !(S.fines > 0); setText(f, `Fines due ${money(S.fines || 0)}`); }
   setText($('#lvl'), 'Level ' + lv);
   setText($('#streak'), S.streak > 1 ? `Streak ×${S.streak}` : '');
   $('#xpbar').style.width = (M.clamp((S.xp - a) / (b - a), 0, 1) * 100).toFixed(1) + '%';
@@ -137,6 +139,20 @@ UI.update = (dt, car, cam, mode) => {
   // district under car
   const lot = W.lots.reduce((b, L) => { const d = Math.max(Math.abs(car.x - L.cx) - (L.x1 - L.x0) / 2, Math.abs(car.z - L.cz) - (L.z1 - L.z0) / 2); return d < b[0] ? [d, L] : b; }, [1e9, null])[1];
   setText($('#district'), lot ? W.DISTRICT_NAMES[lot.district] : '');
+  // wanted level
+  const PO = G.Police, wl = $('#wanted');
+  if (PO.stars > 0) {
+    wl.hidden = false;
+    const k = PO.stars + '|' + PO.searching;
+    if (wl._k !== k) { wl._k = k; wl.innerHTML = [0, 1, 2, 3, 4].map(i => `<i class="${i < PO.stars ? 'on' : ''}">★</i>`).join(''); wl.classList.toggle('search', PO.searching); }
+    $('#escape').style.width = PO.searching ? (M.clamp(PO.escapeT / (6 + PO.stars * 2.5), 0, 1) * 100).toFixed(0) + '%' : '0%';
+    $('#bust').style.width = (M.clamp(PO.bustT / 2.6, 0, 1) * 100).toFixed(0) + '%';
+  } else if (!wl.hidden) { wl.hidden = true; wl._k = ''; }
+  // cab condition
+  const dm = car.damage || 0, db = $('#dmgBar');
+  db.style.width = (100 - dm).toFixed(0) + '%';
+  db.style.background = dm < 40 ? 'var(--good)' : dm < 75 ? 'var(--amber)' : 'var(--bad)';
+  $('#dmg').classList.toggle('crit', dm >= 75);
   drawSpeedo(car); drawMinimap(car);
   updateArrow(car, cam);
   if (car.stuckT > 3.5 && !UI.stuckShown) { UI.stuckShown = true; UI.toast(UI.isTouch ? 'Stuck? Pause → Reset car' : 'Stuck? Press R to reset onto the road'); }
@@ -174,12 +190,16 @@ function drawMinimap(car) {
   ctx.drawImage(mapImg.canvas, -(car.x + mapImg.offset), -(car.z + mapImg.offset));
   const MS = G.Mission;
   if (MS.routePts && MS.target) {
-    ctx.strokeStyle = MS.target.kind === 'pickup' ? '#40e0ff' : '#ffb321'; ctx.lineWidth = 6 / zoom + 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = MS.target.kind === 'pickup' ? '#40e0ff' : MS.target.kind === 'follow' ? '#ff8a3d' : '#ffb321'; ctx.lineWidth = 6 / zoom + 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.beginPath(); MS.routePts.forEach((p, i) => { const x = p[0] - car.x, z = p[1] - car.z; i ? ctx.lineTo(x, z) : ctx.moveTo(x, z); }); ctx.stroke();
   }
   // traffic dots
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  for (const t of G.Traffic.cars) if (t.model.root.visible) { ctx.fillRect(t.x - car.x - 1.5, t.z - car.z - 1.5, 3, 3); }
+  for (const t of G.Traffic.cars) if (t.model.root.visible && !t.police) { ctx.fillRect(t.x - car.x - 1.5, t.z - car.z - 1.5, 3, 3); }
+  const blink = Math.floor(performance.now() / 180) % 2;
+  for (const t of G.Traffic.cars) if (t.police && t.model.root.visible) { ctx.fillStyle = '#9fb3ff'; ctx.fillRect(t.x - car.x - 2.5, t.z - car.z - 2.5, 5, 5); }
+  for (const u of G.Police.units) { ctx.fillStyle = blink ? '#ff3b3b' : '#3b6bff'; ctx.beginPath(); ctx.arc(u.x - car.x, u.z - car.z, 4.5 / zoom + 2, 0, Math.PI * 2); ctx.fill(); }
+  if (G.Police.stars > 0 && !G.Police.searching) { ctx.strokeStyle = blink ? 'rgba(255,59,59,0.5)' : 'rgba(59,107,255,0.5)'; ctx.lineWidth = 3 / zoom; ctx.beginPath(); ctx.arc(0, 0, 95, 0, Math.PI * 2); ctx.stroke(); }
   ctx.restore();
   // target marker (clamped to edge)
   if (MS.target) {
@@ -189,7 +209,7 @@ function drawMinimap(car) {
     let rx = sx * cs - sz * sn, ry = sx * sn + sz * cs;
     const d = Math.hypot(rx, ry), lim = w / 2 - 12;
     if (d > lim) { rx *= lim / d; ry *= lim / d; }
-    ctx.fillStyle = MS.target.kind === 'pickup' ? '#40e0ff' : '#ffb321';
+    ctx.fillStyle = MS.target.kind === 'pickup' ? '#40e0ff' : MS.target.kind === 'follow' ? '#ff8a3d' : '#ffb321';
     ctx.strokeStyle = '#0b0f14'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(cx + rx, cy + ry, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
@@ -225,6 +245,34 @@ function updateArrow(car, cam) {
   setText($('#offDist'), d + ' m');
 }
 
+/* ---------- Big announcements, wanted, radio, follow ---------- */
+let bigTimer = 0;
+UI.bigText = (title, sub, kind) => {
+  const el = $('#bigText'); el.hidden = false; el.className = kind || '';
+  $('#bigTitle').textContent = title; $('#bigSub').textContent = sub || '';
+  void el.offsetWidth; el.classList.add('show');
+  clearTimeout(bigTimer); bigTimer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => { if (!el.classList.contains('show')) el.hidden = true; }, 500); }, 2800);
+};
+UI.wanted = (stars, why) => { UI.toast(why, 'bad'); const wl = $('#wanted'); wl.classList.remove('pulse'); void wl.offsetWidth; wl.classList.add('pulse'); };
+let radioTimer = 0;
+UI.radio = (st) => {
+  const el = $('#radioCard'); el.hidden = false; el.classList.add('show');
+  $('#radioName').textContent = st.name; $('#radioGenre').textContent = st.genre || 'Silence is golden';
+  clearTimeout(radioTimer); radioTimer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.hidden = true, 400); }, 2600);
+};
+UI.follow = (frac, lost) => {
+  const el = $('#follow');
+  if (frac === null || frac === undefined) { el.hidden = true; return; }
+  el.hidden = false; $('#followBar').style.width = (M.clamp(frac, 0, 1) * 100).toFixed(0) + '%';
+  el.classList.toggle('lost', lost > 0.05);
+};
+UI.renderGoals = () => {
+  if (!G.Goals) return;
+  const D = G.Goals.ensure();
+  const html = `<div class="glabel">Today's goals</div>` + D.goals.map(g => `<div class="goal ${g.done ? 'done' : ''}"><span class="gchk">${g.done ? '✓' : ''}</span><span class="gtext">${g.text}<i><b style="width:${(g.prog / g.target * 100).toFixed(0)}%"></b></i></span><span class="greward">${g.done ? 'Paid' : '+' + money(g.reward)}</span></div>`).join('');
+  $$('[data-goals]').forEach(el => el.innerHTML = html);
+};
+
 /* ---------- Panels ---------- */
 UI.show = (id) => { $$('.sheet').forEach(s => s.hidden = s.id !== id); document.body.dataset.sheet = id || ''; };
 UI.showDispatch = (offers) => {
@@ -235,10 +283,12 @@ UI.showDispatch = (offers) => {
     el.innerHTML = `<div class="offer-top"><span class="chip">${cat.label}</span><span class="offer-key">${i + 1}</span></div>
       <div class="offer-route"><span class="dot pu"></span><b>${o.pickup.name}</b><small>${o.pickup.dname} · ${Math.round(o.toPick)} m away</small><span class="dot de"></span><b>${o.dest.name}</b><small>${o.dest.dname}</small></div>
       <div class="offer-meta"><span><em>${(o.len / 1000).toFixed(2)}</em> km</span><span><em>${fmtTime(o.limit)}</em> limit</span><span class="pay"><em>${money(o.base)}</em> up to ${money(o.max)}</span></div>
+      <div class="offer-pers"><span>${G.Mission.PERS[o.pers].label}</span> · ${G.Mission.PERS[o.pers].hint}${cat.chase ? ' · Tail a car first, then drop off' : ''}</div>
       ${cat.strict ? '<div class="offer-warn">Hard deadline: the ride ends if time runs out</div>' : ''}`;
     el.addEventListener('click', () => { G.Audio.init(); UI.onAction('accept', i); });
     list.appendChild(el);
   });
+  UI.renderGoals();
   UI.show('dispatch');
 };
 UI.showComplete = (c, r) => {
@@ -253,6 +303,10 @@ UI.showComplete = (c, r) => {
     ['Tip', `${stars}  mood ${r.sat}%`, r.tip],
   ];
   if (r.streakBonus > 0) rows.push(['Streak bonus', `${r.streak - 1} fares in a row`, r.streakBonus]);
+  if (r.followBonus > 0) rows.push(['Tail bonus', 'Kept the target in sight', r.followBonus]);
+  if (r.pers && r.pers.tip !== 1) rows[3][1] += ` · ${r.pers.label} ×${r.pers.tip}`;
+  if (r.condition < 100) rows[3][1] += ` · cab ${r.condition}%`;
+  if (r.fines > 0) rows.push(['Traffic fines', 'Deducted from this fare', -r.fines]);
   $('#rcRows').innerHTML = rows.map(([a, b, v]) => `<div class="rc-row"><div><b>${a}</b><small>${b}</small></div><span class="${v < 0 ? 'neg' : ''}">${v >= 0 ? '+' : ''}${money(v).replace('−', '-')}</span></div>`).join('');
   $('#rcTotal').textContent = money(r.total);
   $('#rcBal').textContent = `Balance ${money(r.balance)} · +${r.xp} XP` + (r.levelUp ? ` · Level ${r.levelUp}!` : '');
@@ -284,6 +338,9 @@ UI.renderGarage = () => {
   setText($('#gName'), V.name); setText($('#gDesc'), V.desc);
   $('#gStats').innerHTML = [['Acceleration', sp.accel / maxS.accel], ['Top speed', sp.top / maxS.top], ['Braking', sp.brake / maxS.brake], ['Grip', sp.grip / maxS.grip], ['Comfort', sp.comfort / 1.8], ['Fare bonus', (sp.fare - 0.8) / 0.7]]
     .map(([n, f]) => `<div class="gstat"><span>${n}</span><i><b style="width:${(M.clamp(f, 0.04, 1) * 100).toFixed(0)}%"></b></i></div>`).join('') + `<div class="gtop">${Math.round(sp.top * 2.237)} mph top · ${(sp.top / sp.accel * 0.55).toFixed(1)} s to 60</div>`;
+  const rp = $('#gRepair'), dmg = (S.damage && S.damage[sel]) || 0, rc = G.repairCost(sel, dmg);
+  rp.hidden = !owned || dmg < 1;
+  rp.textContent = `Repair ${Math.round(dmg)}% damage · ${money(rc)}`; rp.disabled = S.cash < rc;
   const act = $('#gAction');
   if (!owned) { act.textContent = `Buy for ${money(V.price)}`; act.disabled = S.cash < V.price; act.dataset.mode = 'buy'; }
   else if (S.current !== sel) { act.textContent = 'Drive this car'; act.disabled = false; act.dataset.mode = 'use'; }
@@ -317,8 +374,9 @@ function buildSettings() {
     el.addEventListener('input', () => { S[key] = el.type === 'checkbox' ? el.checked : parse ? parse(el.value) : el.value; G.Save.write(); after && after(S[key]); UI.onAction('settings', key); });
   };
   bind('sQuality', 'quality'); bind('sVolume', 'volume', parseFloat, v => G.Audio.setVolume(v)); bind('sSens', 'sens', parseFloat);
-  bind('sUnits', 'units'); bind('sFov', 'fov', parseFloat); bind('sShake', 'shake'); bind('sTime', 'timeMode'); bind('sWeather', 'weatherMode'); bind('sFps', 'showFps', null, v => { $('#fps').hidden = !v; });
+  bind('sRadio', 'radioVol', parseFloat); bind('sPost', 'post');
+  bind('sUnits', 'units'); bind('sFov', 'fov', parseFloat); bind('sShake', 'shake'); bind('sWeather', 'weatherMode'); bind('sFps', 'showFps', null, v => { $('#fps').hidden = !v; });
   $('#fps').hidden = !S.showFps;
 }
-UI.syncSettings = () => { const S = G.Save.data.settings; [['sQuality', 'quality'], ['sVolume', 'volume'], ['sSens', 'sens'], ['sUnits', 'units'], ['sFov', 'fov'], ['sTime', 'timeMode'], ['sWeather', 'weatherMode']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.value = S[k]; }); $('#sShake').checked = S.shake; $('#sFps').checked = S.showFps; };
+UI.syncSettings = () => { const S = G.Save.data.settings; [['sQuality', 'quality'], ['sVolume', 'volume'], ['sRadio', 'radioVol'], ['sSens', 'sens'], ['sUnits', 'units'], ['sFov', 'fov'], ['sWeather', 'weatherMode']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.value = S[k]; }); $('#sShake').checked = S.shake; $('#sFps').checked = S.showFps; $('#sPost').checked = S.post !== false; };
 })();

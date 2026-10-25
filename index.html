@@ -4,6 +4,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Crosstown</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="description" content="Crosstown: a 3D taxi game in the browser. Pick up fares, beat the meter, dodge the police.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
@@ -25,6 +30,7 @@
   --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
   --ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --btnw: 360px;
   --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
 }
 [hidden] { display: none !important; }
@@ -47,7 +53,7 @@ body:not([data-mode="play"]) #hud, body:not([data-mode="play"]) #touch { display
 .xp { height: 3px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; margin-top: 6px; overflow: hidden; }
 #xpbar { height: 100%; width: 0; background: var(--cyan); }
 
-#mission { position: absolute; left: 50%; transform: translateX(-50%); top: calc(12px + var(--st)); width: min(460px, calc(100% - 380px)); padding: 10px 14px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; }
+#mission { position: absolute; left: 50%; transform: translateX(-50%); top: calc(12px + var(--st)); width: min(460px, calc(100% - 2 * (var(--btnw) + 28px))); padding: 10px 14px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; }
 #mission .chip { grid-column: 1; justify-self: start; }
 .chip { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; color: #10151c; background: var(--chip, var(--amber)); }
 #objTitle { grid-column: 1; font-weight: 700; font-size: 18px; line-height: 1.15; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -86,6 +92,7 @@ body.touch .kbd { display: none; }
 #toasts { position: absolute; left: 50%; top: calc(110px + var(--st)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .toast { background: var(--panel-solid); border: 1px solid var(--line); border-radius: 6px; padding: 7px 14px; font-size: 14px; font-weight: 600; transition: opacity 0.5s, transform 0.5s; white-space: nowrap; }
 .toast.out { opacity: 0; transform: translateY(-8px); }
+.toast.bad { border-color: rgba(255, 90, 74, 0.6); color: #ffc2bb; }
 #offArrow { position: fixed; left: 0; top: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; margin: -24px 0 0 -30px; width: 60px; }
 #offPoint { width: 0; height: 0; border-top: 11px solid transparent; border-bottom: 11px solid transparent; border-left: 20px solid var(--fare); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7)); }
 #offArrow.pickup #offPoint { border-left-color: var(--cyan); }
@@ -239,6 +246,7 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
   #gStats { grid-template-columns: 1fr; }
   .hbtn .lbl { display: none; }
 }
+@media (max-height: 640px) { .title-block { gap: 12px; } .tag { font-size: 15px; } .stack .btn { padding: 10px 16px; } }
 @media (max-height: 460px) {
   body.touch #mission { top: calc(12px + var(--st)); left: calc(max(16px, var(--sl)) + 170px); right: calc(max(16px, var(--sr)) + 200px); }
   body.touch #mapWrap { top: calc(60px + var(--st)); }
@@ -248,6 +256,66 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
   .garage-card { max-height: 80vh; }
   body.touch #hudPrompt { bottom: calc(118px + var(--sb)); }
 }
+/* ---------- cinematic + new HUD parts ---------- */
+body.post #stage canvas { filter: none; }
+body.post .vignette { display: none; }
+.glass { background: linear-gradient(160deg, rgba(20, 26, 34, 0.82), rgba(8, 11, 15, 0.7)); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+#cash { text-shadow: 0 0 18px rgba(255, 198, 26, 0.35); }
+#speedo { filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 10px rgba(255, 150, 40, 0.22)); }
+#fines { font-size: 11px; color: var(--bad); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; font-weight: 700; }
+#dmg { display: grid; grid-template-columns: auto 1fr; gap: 6px; align-items: center; margin-top: 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+#dmg i { height: 3px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; }
+#dmgBar { display: block; height: 100%; width: 100%; background: var(--good); transition: width 0.3s; }
+#dmg.crit span { color: var(--bad); animation: blink 0.7s steps(2) infinite; }
+#follow { grid-column: 1 / -1; height: 4px; background: rgba(255, 138, 61, 0.15); border-radius: 2px; overflow: hidden; margin-top: 5px; }
+#followBar { height: 100%; width: 0; background: #ff8a3d; transition: width 0.2s; }
+#follow.lost { animation: blink 0.5s steps(2) infinite; }
+#wantedBox { position: absolute; right: max(16px, var(--sr)); top: calc(62px + var(--st)); display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+#wanted { display: flex; gap: 2px; font-size: 30px; line-height: 1; }
+#wanted i { font-style: normal; color: rgba(255, 255, 255, 0.16); -webkit-text-stroke: 1.5px rgba(0, 0, 0, 0.75); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+#wanted i.on { color: #fff; text-shadow: 0 0 12px rgba(255, 255, 255, 0.7), 0 2px 6px rgba(0, 0, 0, 0.6); }
+#wanted.search i.on { animation: blink 0.55s steps(2) infinite; color: #ffe3a0; }
+#wanted.pulse { animation: wpulse 0.6s ease-out; }
+@keyframes wpulse { 30% { transform: scale(1.35); } }
+.wmeta { display: flex; flex-direction: column; gap: 3px; width: 150px; }
+#wanted[hidden] + .wmeta { display: none; }
+.wmeta i { display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+#escape, #bust { display: block; height: 100%; width: 0; }
+#escape { background: var(--good); } #bust { background: var(--bad); }
+body.touch #wantedBox { top: calc(190px + var(--st)); }
+#bigText { position: fixed; left: 0; right: 0; top: 30%; text-align: center; pointer-events: none; z-index: 6; opacity: 0; transform: scale(1.15); transition: opacity 0.35s, transform 0.5s cubic-bezier(.2,.9,.3,1.2); }
+#bigText.show { opacity: 1; transform: scale(1); }
+#bigTitle { font-family: var(--display); font-weight: 900; font-size: clamp(56px, 11vw, 128px); line-height: 0.9; text-transform: uppercase; letter-spacing: 0.02em; color: var(--amber); -webkit-text-stroke: 2px rgba(0, 0, 0, 0.8); text-shadow: 0 6px 30px rgba(0, 0, 0, 0.7); }
+#bigText.bad #bigTitle { color: #ff4a3d; } #bigText.good #bigTitle { color: #5ee08a; }
+#bigSub { margin-top: 8px; font-size: 18px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9); }
+#radioCard { position: fixed; left: 50%; top: calc(110px + var(--st)); transform: translate(-50%, -8px); opacity: 0; transition: opacity 0.3s, transform 0.3s; text-align: center; pointer-events: none; z-index: 5; padding: 10px 22px; }
+#radioCard.show { opacity: 1; transform: translate(-50%, 0); }
+#radioName { font-family: var(--display); font-weight: 900; font-size: 34px; line-height: 1; letter-spacing: 0.04em; color: var(--cyan); text-shadow: 0 0 16px rgba(64, 224, 255, 0.5); }
+#radioGenre { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+#coach { position: fixed; left: 50%; bottom: calc(16px + var(--sb)); transform: translateX(-50%); z-index: 4; display: flex; gap: 10px; align-items: center; padding: 10px 16px; width: max-content; max-width: min(520px, calc(100% - 460px)); font-size: 15px; border-color: rgba(64, 224, 255, 0.45); pointer-events: none; }
+#coach b { color: var(--cyan); }
+.coach-n { font-family: var(--mono); font-size: 11px; color: #10151c; background: var(--cyan); border-radius: 3px; padding: 1px 5px; flex-shrink: 0; }
+body[data-sheet="dispatch"] #coach, body.touch #coach { bottom: auto; top: calc(14px + var(--st)); max-width: calc(100% - 32px); }
+body.touch[data-sheet=""] #coach { top: calc(150px + var(--st)); }
+@media (max-width: 1180px) { :root { --btnw: 200px; } .hbtn .lbl { display: none; } }
+@media (max-width: 760px) { #coach { max-width: calc(100% - 32px); bottom: auto; top: calc(150px + var(--st)); } }
+body:not([data-mode="play"]) #coach { display: none; }
+.offer-pers { font-size: 12px; color: var(--muted); }
+.offer-pers span { color: var(--text); font-weight: 700; }
+.goals { display: flex; flex-direction: column; gap: 6px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.02); }
+.goals:empty { display: none; }
+.goal { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; font-size: 14px; }
+.gchk { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--line); display: grid; place-items: center; font-size: 11px; color: #10151c; }
+.goal.done .gchk { background: var(--good); border-color: var(--good); }
+.goal.done .gtext { color: var(--muted); text-decoration: line-through; }
+.gtext i { display: block; height: 3px; margin-top: 3px; background: rgba(255, 255, 255, 0.08); border-radius: 2px; overflow: hidden; }
+.gtext b { display: block; height: 100%; background: var(--cyan); }
+.greward { font-family: var(--mono); font-size: 12px; color: var(--amber); }
+/* letterbox on the title screen */
+body[data-mode="menu"] #mainMenu { padding-top: calc(5vh + 16px + var(--st)); padding-bottom: calc(5vh + 16px + var(--sb)); }
+body[data-mode="menu"]::before, body[data-mode="menu"]::after { content: ""; position: fixed; left: 0; right: 0; height: 5vh; background: #000; z-index: 0; pointer-events: none; }
+body[data-mode="menu"]::before { top: 0; } body[data-mode="menu"]::after { bottom: 0; }
+.logo { text-shadow: 0 0 40px rgba(255, 198, 26, 0.25); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 
@@ -259,6 +327,8 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
     <div id="cash">$0</div>
     <div class="wallet-sub"><span id="lvl">Level 1</span><span id="streak"></span></div>
     <div class="xp"><div id="xpbar"></div></div>
+    <div id="dmg"><span>Cab</span><i><b id="dmgBar"></b></i></div>
+    <div id="fines" hidden></div>
   </div>
   <div id="mission" class="glass">
     <span class="chip" id="objChip">Off duty</span>
@@ -266,13 +336,16 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
     <div id="objSub"></div>
     <div class="obj-right"><div id="objTimer" hidden>0:00</div><div id="objDist"></div><div id="objPay"></div></div>
     <div id="mood" hidden><div id="moodBar"></div></div>
+    <div id="follow" hidden><div id="followBar"></div></div>
   </div>
   <div id="topBtns">
     <button class="hbtn primary" data-act="fares" aria-label="Fares"><span class="lbl">Fares</span><span class="kbd">F</span><span class="tlbl" aria-hidden="true"></span></button>
+    <button class="hbtn" data-act="radio" aria-label="Change radio station"><span class="lbl">Radio</span><span class="kbd">Q</span><svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true"><rect x="1" y="4" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 4l9-3" stroke="currentColor" stroke-width="1.6"/><circle cx="10.5" cy="8.5" r="2" fill="currentColor"/></svg></button>
     <button class="hbtn" data-act="camera" aria-label="Switch camera"><span class="lbl">Cam</span><span class="kbd">C</span><svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><rect x="1" y="3" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13 7l4-3v8l-4-3z" fill="currentColor"/></svg></button>
     <button class="hbtn" data-act="pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="1" width="3.5" height="12" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" fill="currentColor"/></svg></button>
   </div>
   <div id="fps" hidden></div>
+  <div id="wantedBox"><div id="wanted" hidden></div><div class="wmeta"><i><b id="escape"></b></i><i><b id="bust"></b></i></div></div>
   <div id="mapWrap"><canvas id="minimap" width="240" height="240"></canvas><div class="map-meta"><span id="district"></span><span id="clock"></span></div></div>
   <canvas id="speedo" width="260" height="260"></canvas>
   <button id="hudPrompt" class="glass" hidden></button>
@@ -280,6 +353,10 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
   <div id="toasts"></div>
   <div id="offArrow" hidden><div id="offPoint"></div><div id="offDist"></div></div>
 </div>
+
+<div id="bigText" hidden><div id="bigTitle"></div><div id="bigSub"></div></div>
+<div id="radioCard" class="glass" hidden><div id="radioName"></div><div id="radioGenre"></div></div>
+<div id="coach" class="glass" hidden></div>
 
 <div id="touch">
   <div id="steerPad" class="tpad glass"><div id="steerKnob"></div></div>
@@ -319,6 +396,7 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
 <section class="sheet" id="pause" hidden>
   <div class="card">
     <h2>Paused</h2><p class="lede">The meter is stopped.</p>
+    <div class="goals" data-goals></div>
     <div class="stack">
       <button class="btn primary" data-act="resume">Resume <span class="kbd">Esc</span></button>
       <button class="btn" id="pauseRestart" data-act="restart">Restart fare</button>
@@ -336,6 +414,7 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
 <section class="sheet" id="dispatch" hidden>
   <div class="card">
     <h2>Dispatch</h2><p class="lede">Pick a fare. The meter starts once your passenger is seated.</p>
+    <div class="goals" data-goals></div>
     <div id="offers"></div>
     <div class="row"><button class="btn small" data-act="refreshOffers">New offers</button><button class="btn small" data-act="roam">Free roam</button></div>
   </div>
@@ -366,10 +445,11 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
     <h2>Settings</h2>
     <div class="field"><label for="sQuality">Graphics quality</label><select id="sQuality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
     <div class="field"><label for="sVolume">Volume</label><input id="sVolume" type="range" min="0" max="1" step="0.05"></div>
+    <div class="field"><label for="sRadio">Radio volume</label><input id="sRadio" type="range" min="0" max="1" step="0.05"></div>
+    <div class="field"><label for="sPost">Cinematic effects (bloom, film grade)</label><input id="sPost" type="checkbox"></div>
     <div class="field"><label for="sSens">Camera drag sensitivity</label><input id="sSens" type="range" min="0.3" max="2.5" step="0.1"></div>
     <div class="field"><label for="sFov">Field of view</label><input id="sFov" type="range" min="55" max="85" step="1"></div>
     <div class="field"><label for="sUnits">Speed units</label><select id="sUnits"><option value="mph">mph</option><option value="kmh">km/h</option></select></div>
-    <div class="field"><label for="sTime">Time of day</label><select id="sTime"><option value="cycle">Live cycle</option><option value="morning">Morning</option><option value="noon">Noon</option><option value="sunset">Sunset</option><option value="night">Night</option></select></div>
     <div class="field"><label for="sWeather">Weather</label><select id="sWeather"><option value="auto">Changing</option><option value="clear">Clear</option><option value="cloudy">Overcast</option><option value="rain">Rain</option><option value="fog">Fog</option></select></div>
     <div class="field"><label for="sShake">Camera shake</label><input id="sShake" type="checkbox"></div>
     <div class="field"><label for="sFps">Show frame rate</label><input id="sFps" type="checkbox"></div>
@@ -392,12 +472,14 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
       <kbd>C</kbd><span>Chase / cockpit camera</span>
       <kbd>Mouse drag</kbd><span>Look around</span>
       <kbd>R</kbd><span>Reset car onto the road</span>
+      <kbd>Q</kbd><span>Next radio station</span>
       <kbd>H</kbd><span>Horn</span> <kbd>M</kbd><span>Mute</span>
       <kbd>Esc / P</kbd><span>Pause</span>
-      <kbd>Gamepad</kbd><span>Stick steers, RT gas, LT brake, B drift, A interact, Y camera, X fares</span>
+      <kbd>Gamepad</kbd><span>Stick steers, RT gas, LT brake, B drift, A interact, Y camera, X fares, RB radio, LB horn</span>
       <kbd>Touch</kbd><span>Drag the steering pad, hold Gas / Brake, tap the yellow prompt to board</span>
     </div>
     <p class="lede">Stop inside the glowing ring next to your passenger. They walk to the rear door and climb in, then the meter starts.</p>
+    <p class="lede">Running red lights, speeding past police or hitting people raises your wanted level. Get out of sight to lose the cops, or stop next to one and you're busted.</p>
     <button class="btn primary" data-act="controlsBack">Back</button>
   </div>
 </section>
@@ -411,6 +493,7 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
       <div><div id="gName"></div><p id="gDesc"></p></div>
       <div id="gStats"></div>
       <button class="btn primary" id="gAction" data-act="garageAction">Buy</button>
+      <button class="btn" id="gRepair" data-act="repair" hidden>Repair</button>
       <div><div class="glabel">Upgrades</div><div id="gUp"></div></div>
       <div><div class="glabel">Paint</div><div id="gPaint"></div></div>
     </div>
@@ -420,12 +503,18 @@ input[type=checkbox] { accent-color: var(--amber); width: 20px; height: 20px; ju
 <div id="loading"><div class="logo">Crosstown</div><div class="loadbar"><i></i></div><div style="color:var(--muted);font-size:13px">Building Vale Harbor…</div></div>
 <div id="bootError" hidden><h2 style="font-family:var(--display);font-size:34px;margin:0">Couldn't start the game</h2><p style="color:var(--muted);max-width:40ch"></p></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="vendor/three.r147.min.js"></script>
+<script>window.THREE || document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"><\/script>');</script>
+<script src="vendor/three-postfx.r147.js"></script>
 <script src="js/core.js"></script>
 <script src="js/world.js"></script>
+<script src="js/fx.js"></script>
 <script src="js/people.js"></script>
 <script src="js/vehicle.js"></script>
 <script src="js/traffic.js"></script>
+<script src="js/police.js"></script>
 <script src="js/mission.js"></script>
+<script src="js/goals.js"></script>
+<script src="js/radio.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
