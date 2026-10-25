@@ -322,17 +322,20 @@ T.taxiSign = () => {
 
 /* ---------- Save system ---------- */
 const DEFAULT_SETTINGS = { quality: 'auto', volume: 0.7, radioVol: 0.5, station: 0, sens: 1, units: 'mph', fov: 68, shake: true, timeMode: 'cycle', weatherMode: 'auto', showFps: false, assist: true, post: true };
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
+const STARTER_CAR = 'sport', STARTER_PAINT = '#1b1d22'; // black Vanta GT
 // Each step upgrades a save from version k to k + 1. Never edit a step once shipped; add a new one.
 const MIGRATIONS = {
   1: d => { d.damage = d.damage || {}; d.fines = d.fines || 0; d.daily = null; d.tutorial = { done: (d.stats && d.stats.fares > 0) || false }; },
+  // the cab is now a black Vanta GT for everyone; the old sedan stays in the garage
+  2: d => { d.owned = Array.isArray(d.owned) ? d.owned : ['sedan']; if (d.owned.indexOf('sport') < 0) d.owned.push('sport'); d.current = 'sport'; d.paint = d.paint || {}; d.paint.sport = STARTER_PAINT; },
 };
 G.Save = {
   key: 'crosstown.save.v1', // key kept from v1 so existing careers carry over; the format version lives inside
   version: SAVE_VERSION,
   data: null,
   fresh() {
-    return { version: SAVE_VERSION, cash: 250, xp: 0, owned: ['sedan'], current: 'sedan', upgrades: {}, paint: {}, damage: {}, fines: 0, daily: null, tutorial: { done: false },
+    return { version: SAVE_VERSION, cash: 250, xp: 0, owned: ['sedan', STARTER_CAR], current: STARTER_CAR, upgrades: {}, paint: { [STARTER_CAR]: STARTER_PAINT }, damage: {}, fines: 0, daily: null, tutorial: { done: false },
       stats: { fares: 0, earned: 0, failed: 0, bestStreak: 0, pedsHit: 0, escapes: 0, busted: 0, goals: 0 }, streak: 0, trip: 1, started: false, settings: Object.assign({}, DEFAULT_SETTINGS) };
   },
   migrate(d) {
