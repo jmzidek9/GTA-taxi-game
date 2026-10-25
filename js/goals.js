@@ -67,7 +67,7 @@ const STEPS = [
   { key: 'deliver', text: () => 'Get them to the orange beacon before the meter runs out. Smooth driving means bigger tips' },
   { key: 'done', text: () => 'First fare done! Watch for red lights and people crossing — the police are watching' },
 ];
-let step = -1, hold = 0;
+let step = -1, hold = 0, shownT = 0;
 GO.tutorialActive = () => !G.Save.data.tutorial.done;
 GO.tutorialEvent = (ev) => { if (ev === 'fareDone' && GO.tutorialActive()) { step = 5; hold = 7; show(); } };
 function show() {
@@ -84,7 +84,12 @@ GO.update = (dt) => {
   else if (MS.state === 'boarding') step = 3;
   else step = 4;
   if (sheet && sheet !== 'dispatch') { document.getElementById('coach').hidden = true; return; }
-  if (step !== prev || document.getElementById('coach').hidden) show();
+  if (step !== prev) { shownT = 0; show(); }
+  // each hint shows for a few seconds, then gets out of the way until the next step
+  shownT += dt;
+  const el = document.getElementById('coach');
+  if (shownT > 7 && !el.hidden && step !== 1) el.hidden = true;
+  else if (shownT <= 7 && el.hidden) show();
 };
 GO.skipTutorial = () => { G.Save.data.tutorial.done = true; G.Save.write(); step = -1; show(); };
 })();

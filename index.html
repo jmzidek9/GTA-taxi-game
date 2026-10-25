@@ -316,6 +316,59 @@ body[data-mode="menu"] #mainMenu { padding-top: calc(5vh + 16px + var(--st)); pa
 body[data-mode="menu"]::before, body[data-mode="menu"]::after { content: ""; position: fixed; left: 0; right: 0; height: 5vh; background: #000; z-index: 0; pointer-events: none; }
 body[data-mode="menu"]::before { top: 0; } body[data-mode="menu"]::after { bottom: 0; }
 .logo { text-shadow: 0 0 40px rgba(255, 198, 26, 0.25); }
+/* ---------- Phones in landscape: compact HUD that keeps the road clear ----------
+   left column: wallet → minimap → steering pad; top: slim job card + buttons;
+   right column: wanted stars → passenger chat → pedals; bottom center: small speedometer */
+@media (max-height: 560px) {
+  body.touch #hud { padding: 0; }
+  body.touch #wallet { left: max(10px, var(--sl)); top: calc(8px + var(--st)); padding: 5px 10px 7px; min-width: 0; width: 118px; }
+  body.touch #cash { font-size: 22px; }
+  body.touch .wallet-sub { font-size: 9px; margin-top: 2px; }
+  body.touch .xp { margin-top: 4px; }
+  body.touch #dmg { margin-top: 4px; font-size: 8px; }
+  body.touch #fines { font-size: 9px; }
+  body.touch #mapWrap { left: max(10px, var(--sl)); right: auto; top: calc(80px + var(--st)); bottom: auto; align-items: flex-start; gap: 3px; }
+  body.touch #minimap { width: 92px; height: 92px; }
+  body.touch .map-meta { font-size: 9px; letter-spacing: 0.08em; }
+  body.touch #mission { left: calc(max(10px, var(--sl)) + 128px); right: calc(max(10px, var(--sr)) + 200px); top: calc(8px + var(--st)); transform: none; width: auto; padding: 5px 10px; gap: 0 10px; }
+  body.touch #mission .chip { font-size: 8.5px; padding: 1px 5px; }
+  body.touch #objTitle { font-size: 14px; }
+  body.touch #objSub { font-size: 11px; }
+  body.touch #objTimer { font-size: 24px; }
+  body.touch #objDist { font-size: 11px; }
+  body.touch #objPay { font-size: 9.5px; }
+  body.touch #topBtns { right: max(10px, var(--sr)); top: calc(8px + var(--st)); gap: 5px; }
+  body.touch .hbtn { height: 34px; min-width: 34px; padding: 0 8px; border-radius: 7px; }
+  body.touch .hbtn.primary .lbl { display: inline; font-size: 11px; }
+  body.touch #wantedBox { right: max(10px, var(--sr)); top: calc(48px + var(--st)); }
+  body.touch #wanted { font-size: 19px; }
+  body.touch .wmeta { width: 100px; }
+  body.touch #say { left: auto; right: max(10px, var(--sr)); top: calc(76px + var(--st)); max-width: 230px; padding: 6px 10px; }
+  body.touch #sayLine { font-size: 13px; }
+  body.touch #toasts { top: calc(64px + var(--st)); }
+  body.touch .toast { font-size: 12px; padding: 5px 10px; }
+  body.touch #coach, body.touch[data-sheet=""] #coach { top: calc(64px + var(--st)); bottom: auto; font-size: 12px; padding: 5px 10px; gap: 8px; max-width: min(420px, calc(100% - 300px)); }
+  body.touch #speedo { width: 96px; height: 96px; bottom: calc(0px + var(--sb)); right: 50%; transform: translateX(50%); }
+  body.touch #hudPrompt { bottom: calc(100px + var(--sb)); font-size: 14px; padding: 8px 14px; }
+  body.touch #steerPad { left: max(10px, var(--sl)); bottom: calc(10px + var(--sb)); width: min(30vw, 220px); height: 72px; border-radius: 36px; }
+  body.touch #steerPad::before { display: none; }
+  body.touch #steerKnob { width: 54px; height: 54px; }
+  body.touch .pedals { right: max(10px, var(--sr)); bottom: calc(10px + var(--sb)); gap: 8px; }
+  body.touch .tcol { gap: 6px; }
+  body.touch #tGas { width: 70px; height: 96px; }
+  body.touch #tBrake { width: 62px; height: 60px; }
+  body.touch #tHb { width: 62px; height: 30px; font-size: 10px; border-radius: 10px; }
+  body.touch #offArrow { transform-origin: center; }
+  body.touch #bigTitle { font-size: clamp(44px, 9vw, 84px); }
+}
+/* very short landscape screens (in-app viewers, small phones): drop secondary text */
+@media (max-height: 400px) {
+  body.touch #objSub, body.touch #objPay, body.touch .wallet-sub, body.touch #dmg span { display: none; }
+  body.touch #mapWrap { top: calc(62px + var(--st)); }
+  body.touch #minimap { width: 82px; height: 82px; }
+  body.touch #coach, body.touch[data-sheet=""] #coach, body.touch #toasts { top: calc(50px + var(--st)); }
+  body.touch #say { top: calc(66px + var(--st)); }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 
