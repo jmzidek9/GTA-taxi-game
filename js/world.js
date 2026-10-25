@@ -768,7 +768,9 @@ const WEATHER = {
   fog: { cloud: 0.6, fogMul: 0.2, dark: 0.25, wet: 0.35, rain: 0, haze: 0.95 },
 };
 W.WEATHER_LABEL = { clear: 'Clear', cloudy: 'Overcast', rain: 'Rain', fog: 'Fog' };
-W.state = { hour: 17.2, weather: 'clear', wx: Object.assign({}, WEATHER.clear), night: 0, nextWeather: 140 };
+// Vale Harbor is a night city: the clock runs from dusk-dark to just before dawn, then wraps
+const NIGHT_START = 20.6, NIGHT_END = 29; // 29 = 05:00 next day, still fully dark
+W.state = { hour: 21.5, weather: 'clear', wx: Object.assign({}, WEATHER.clear), night: 0, nextWeather: 140 };
 const _c1 = new THREE.Color(), _c2 = new THREE.Color();
 function lerpHex(a, b, t, out) { _c1.set(a); _c2.set(b); return out.copy(_c1).lerp(_c2, t); }
 let envTimer = 0, lastEnvHour = -99, lastEnvWx = '';
@@ -777,9 +779,11 @@ W.refreshEnv = () => { envTimer = 0; lastEnvHour = -99; };
 W.update = (dt, focus, renderer) => {
   const S = W.state, set = G.Save.data.settings;
   // time
-  const tm = set.timeMode;
-  if (tm === 'cycle') S.hour = (S.hour + dt * (24 / 900)) % 24; // 15 real minutes per day
-  else { const target = { morning: 8.5, noon: 12.5, sunset: 18.6, night: 22.5 }[tm] || 12; S.hour = target; }
+  let h = S.hour < 12 ? S.hour + 24 : S.hour; // continuous night timeline
+  if (h < NIGHT_START || h > NIGHT_END) h = NIGHT_START;
+  h += dt * (8.4 / 600); // one night every 10 real minutes
+  if (h > NIGHT_END) h = NIGHT_START;
+  S.hour = h % 24;
   // weather
   if (set.weatherMode === 'auto') {
     S.nextWeather -= dt;

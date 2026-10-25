@@ -144,7 +144,7 @@ MS.makeOffers = (car) => {
     if (ck === 'tourist') pers = 'tourist';
     else if (ck === 'rush' || ck === 'airport') pers = Math.random() < 0.6 ? 'impatient' : pers === 'impatient' ? 'nervous' : pers;
     else if (ck === 'vip') pers = Math.random() < 0.5 ? 'nervous' : 'easy';
-    else if ((night && Math.random() < 0.45) || ck === 'chase') pers = Math.random() < 0.7 ? 'party' : pers;
+    else if ((night && Math.random() < 0.22) || ck === 'chase') pers = Math.random() < 0.7 ? 'party' : pers;
     if (S.stats.fares === 0) pers = 'easy';
     out.push({ id: offerSeq++, cat: ck, pers, pickup: pu, dest: de, len: r.len, toPick: toPick.len, limit, base, max: Math.round(base * 2.1 * PERS[pers].tip), seed: Math.floor(Math.random() * 1e9) });
   }

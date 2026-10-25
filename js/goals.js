@@ -13,7 +13,6 @@ const TEMPLATES = [
   { id: 'rush', minLv: 2, make: () => ({ text: 'Beat the clock on a Rush fare', target: 1, reward: 220 }) },
   { id: 'chase', minLv: 2, make: () => ({ text: 'Tail the car on a Follow That Car fare', target: 1, reward: 260 }) },
   { id: 'escape', make: () => ({ text: 'Escape a police pursuit', target: 1, reward: 250 }) },
-  { id: 'night', make: () => ({ text: 'Complete a fare after dark', target: 1, reward: 140 }) },
   { id: 'streak', make: r => { const n = 3 + Math.floor(r() * 2); return { text: `Reach a ${n}-fare streak`, target: n, reward: 200 + n * 30 }; } },
   { id: 'clean', make: () => ({ text: 'Finish a fare with no fines owed', target: 1, reward: 110 }) },
 ];
@@ -53,7 +52,6 @@ G.on('fareDone', r => {
   if (r.cat === 'tourist') bump('tourist', 1);
   if (r.cat === 'rush') bump('rush', 1);
   if (r.cat === 'chase' && r.followOk) bump('chase', 1);
-  if (G.World.state.night > 0.6) bump('night', 1);
   if (r.fines === 0) bump('clean', 1);
   bump('streak', G.Save.data.streak, true);
   GO.tutorialEvent('fareDone');

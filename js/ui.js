@@ -375,8 +375,8 @@ function buildSettings() {
   };
   bind('sQuality', 'quality'); bind('sVolume', 'volume', parseFloat, v => G.Audio.setVolume(v)); bind('sSens', 'sens', parseFloat);
   bind('sRadio', 'radioVol', parseFloat); bind('sPost', 'post');
-  bind('sUnits', 'units'); bind('sFov', 'fov', parseFloat); bind('sShake', 'shake'); bind('sTime', 'timeMode'); bind('sWeather', 'weatherMode'); bind('sFps', 'showFps', null, v => { $('#fps').hidden = !v; });
+  bind('sUnits', 'units'); bind('sFov', 'fov', parseFloat); bind('sShake', 'shake'); bind('sWeather', 'weatherMode'); bind('sFps', 'showFps', null, v => { $('#fps').hidden = !v; });
   $('#fps').hidden = !S.showFps;
 }
-UI.syncSettings = () => { const S = G.Save.data.settings; [['sQuality', 'quality'], ['sVolume', 'volume'], ['sRadio', 'radioVol'], ['sSens', 'sens'], ['sUnits', 'units'], ['sFov', 'fov'], ['sTime', 'timeMode'], ['sWeather', 'weatherMode']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.value = S[k]; }); $('#sShake').checked = S.shake; $('#sFps').checked = S.showFps; $('#sPost').checked = S.post !== false; };
+UI.syncSettings = () => { const S = G.Save.data.settings; [['sQuality', 'quality'], ['sVolume', 'volume'], ['sRadio', 'radioVol'], ['sSens', 'sens'], ['sUnits', 'units'], ['sFov', 'fov'], ['sWeather', 'weatherMode']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.value = S[k]; }); $('#sShake').checked = S.shake; $('#sFps').checked = S.showFps; $('#sPost').checked = S.post !== false; };
 })();

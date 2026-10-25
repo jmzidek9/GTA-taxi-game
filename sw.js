@@ -1,5 +1,5 @@
 /* CROSSTOWN — offline cache. Bump VERSION whenever any shipped file changes. */
-const VERSION = 'crosstown-v2';
+const VERSION = 'crosstown-v3';
 const CORE = [
   './', 'index.html', 'manifest.webmanifest', 'icon.svg',
   'vendor/three.r147.min.js', 'vendor/three-postfx.r147.js',

@@ -232,8 +232,9 @@ function updateParticles(dt, st) {
 let beamMat = null;
 FX.beamMaterial = () => beamMat || (beamMat = new THREE.ShaderMaterial({
   uniforms: { strength: { value: 0 } },
-  vertexShader: 'varying float vT; varying float vE; void main(){ vT = 1.0 - uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); vE = abs(dot(n, normalize(-mv.xyz))); gl_Position = projectionMatrix * mv; }',
-  fragmentShader: 'uniform float strength; varying float vT; varying float vE; void main(){ float a = pow(1.0 - vT, 1.7) * smoothstep(0.0, 0.08, vT) * pow(vE, 1.5) * strength; gl_FragColor = vec4(vec3(1.0, 0.93, 0.78) * a, 1.0); }',
+  // vD fades beams that pass right over the lens (e.g. a car tailgating the camera)
+  vertexShader: 'varying float vT; varying float vE; varying float vD; void main(){ vT = 1.0 - uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal); vE = abs(dot(n, normalize(-mv.xyz))); vD = -mv.z; gl_Position = projectionMatrix * mv; }',
+  fragmentShader: 'uniform float strength; varying float vT; varying float vE; varying float vD; void main(){ float a = pow(1.0 - vT, 1.7) * smoothstep(0.0, 0.08, vT) * pow(vE, 1.5) * smoothstep(1.5, 7.0, vD) * strength; gl_FragColor = vec4(vec3(1.0, 0.93, 0.78) * a, 1.0); }',
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
 }));
 FX.beamGeometry = (d, len) => {

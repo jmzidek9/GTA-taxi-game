@@ -433,7 +433,7 @@ G.debug = {
   action: (a, arg) => onAction(a, arg),
   heat: h => G.Police.addHeat(h, 'Test'),
   sim: (secs, inp) => { const n = Math.round(secs * 30); if (inp) UI.pollInput = () => inp; for (let k = 0; k < n; k++) tick(1 / 30, false); },
-  hour: h => { G.Save.data.settings.timeMode = 'cycle'; W.state.hour = h; W.refreshEnv(); },
+  hour: h => { W.state.hour = h; W.refreshEnv(); },
   weather: w => { G.Save.data.settings.weatherMode = w; },
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
